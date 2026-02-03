@@ -13,14 +13,15 @@ def ejecutar_sistema_automatico():
     categorias = ["Hogar", "Gadgets", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
 
-    # Nombres BASE oficiales. Estos son los más compatibles.
+    # Intentos con nombres base oficiales
     intentos_api = [
         ("v1beta", "gemini-1.5-flash"),
         ("v1beta", "gemini-1.5-pro"),
-        ("v1beta", "gemini-2.0-flash-exp")
+        ("v1", "gemini-1.5-flash")
     ]
 
     try:
+        # 1. Conexión a Sheets
         print("--- Conectando a Google Sheets ---")
         creds_info = json.loads(creds_raw)
         creds = Credentials.from_service_account_info(creds_info, 
@@ -29,51 +30,61 @@ def ejecutar_sistema_automatico():
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Conexión con Sheets exitosa.")
 
+        # 2. Gemini
         res_g = None
         for api_ver, model_name in intentos_api:
             print(f"--- Intentando con {model_name} en {api_ver} ---")
             url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
+            payload = {"contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
             
-            payload = {
-                "contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]
-            }
+            try:
+                r = requests.post(url, json=payload, timeout=30)
+                res_json = r.json()
+                if 'candidates' in res_json:
+                    res_g = res_json
+                    print(f"✅ ¡Éxito con {model_name}!")
+                    break
+                else:
+                    print(f"⚠️ Fallo {model_name}: {res_json.get('error', {}).get('message', 'Desconocido')}")
+            except Exception as e:
+                print(f"⚠️ Error de red con {model_name}: {e}")
             
-            r = requests.post(url, json=payload)
-            res_json = r.json()
-            
-            if 'candidates' in res_json:
-                res_g = res_json
-                print(f"✅ ¡Éxito con {model_name}!")
-                break
-            else:
-                err = res_json.get('error', {})
-                print(f"⚠️ Fallo {model_name}: {err.get('message', 'Sin mensaje')}")
-                time.sleep(2)
+            time.sleep(2)
 
         if not res_g:
-            print("❌ Ningún modelo funcionó. Verificando disponibilidad de modelos para tu cuenta...")
-            # Diagnóstico: Listar modelos disponibles
+            print("--- INICIANDO DIAGNÓSTICO DE MODELOS ---")
             diag_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
             diag_r = requests.get(diag_url).json()
             modelos_disponibles = [m['name'] for m in diag_r.get('models', [])]
             print(f"DEBUG: Modelos que tu API Key puede ver: {modelos_disponibles}")
             sys.exit(1)
 
-        # Procesamiento
+        # 3. Procesamiento
         texto = res_g['candidates'][0]['content']['parts'][0]['text']
         datos = [x.strip() for x in texto.replace('```', '').split('|') if x.strip()]
         
         if len(datos) < 4:
-            # Reintento de partición si falló el pipe
             datos = [x.strip() for x in texto.split('\n') if x.strip()][:4]
 
-        # Creatomate
+        # 4. Creatomate
         print(f"--- Renderizando Video: {datos[0]} ---")
-        res_v = requests.post("[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)", 
-            headers={"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"},
-            json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}})
-        
+        api_url = "[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)"
+        headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
+        payload_v = {
+            "template_id": TEMPLATE_ID,
+            "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}
+        }
+        res_v = requests.post(api_url, headers=headers, json=payload_v)
         video_url = res_v.json()[0]['url']
-        link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){datos[1].replace(' ', '+')}&tag={AMAZON_TAG}"
         
-        sheet.append_row
+        # 5. Guardado Final
+        link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){datos[1].replace(' ', '+')}&tag={AMAZON_TAG}"
+        sheet.append_row([datos[0], link, video_url])
+        print(f"🚀 ¡LOGRADO! Fila añadida para {datos[0]}")
+
+    except Exception as e:
+        print(f"❌ Error crítico en el bot: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    ejecutar_sistema_automatico()
