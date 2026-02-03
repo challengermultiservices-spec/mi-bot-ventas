@@ -1,32 +1,33 @@
-name: Bot Automatizado de Ventas
+name: Sistema Automatizado de Ventas Amazon
 
 on:
-  workflow_dispatch: # Permite ejecutarlo manualmente desde la pestaña Actions
-  # schedule:
-  #   - cron: '0 9 * * *' # Descomenta estas líneas para que corra solo a las 9 AM
+  workflow_dispatch: # Botón manual en la pestaña Actions
+  schedule:
+    - cron: '0 */6 * * *' # Se ejecuta automáticamente cada 6 horas
 
 jobs:
-  build:
+  ejecutar-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del código
+      - name: 1. Descargar Repositorio
         uses: actions/checkout@v3
 
-      - name: Configurar Python
+      - name: 2. Configurar Python 3.9
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      - name: Instalar dependencias
+      - name: 3. Instalar Librerías Necesarias
         run: |
           python -m pip install --upgrade pip
           pip install requests gspread google-auth
 
-      - name: Ejecutar Script de Prueba
+      - name: 4. Ejecutar el Bot Real
         env:
+          # Estas son las llaves que configuraste en Settings > Secrets
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
-        # NOTA: Cambia "test_creatomate.py" por "bot.py" una vez que el test dé OK
-        run: python test_creatomate.py
+        # Ejecutamos el bot principal. Si prefieres probar el test, cambia a test_creatomate.py
+        run: python bot.py
