@@ -10,8 +10,15 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Hogar Inteligente", "Gadgets Tech", "Cocina", "Mascotas"]
+    categorias = ["Gadgets Tech", "Hogar Inteligente", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
+
+    # Lista de intentos: (Versión API, Nombre Modelo)
+    intentos_api = [
+        ("v1", "gemini-1.5-flash"), 
+        ("v1beta", "gemini-1.5-pro"),
+        ("v1beta", "gemini-2.0-flash")
+    ]
 
     try:
         print("--- Conectando a Google Sheets ---")
@@ -22,56 +29,55 @@ def ejecutar_sistema_automatico():
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Conexión con Sheets exitosa.")
 
-        print(f"--- Solicitando a Gemini Pro (Categoría: {cat}) ---")
-        url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={gemini_key}"
-        
-        # Prompt más estricto y con ejemplo
-        prompt = (f"Sugiere un producto viral de Amazon de la categoría {cat}. "
-                  "Responde ÚNICAMENTE en este formato: NOMBRE | TERMINO_BUSQUEDA | HOOK | CUERPO_GUION. "
-                  "No añadas introducciones ni explicaciones.")
-        
-        r = requests.post(url_gemini, json={"contents": [{"parts": [{"text": prompt}]}]})
-        res_json = r.json()
-        
-        if 'candidates' not in res_json:
-            print(f"❌ Error API Gemini: {res_json}"); sys.exit(1)
-
-        # Lógica de extracción mejorada
-        texto_raw = res_json['candidates'][0]['content']['parts'][0]['text']
-        print(f"DEBUG: Respuesta recibida: {texto_raw}")
-
-        # Limpiamos posibles formatos markdown o saltos de línea
-        lineas = texto_raw.replace('```', '').replace('markdown', '').strip().split('\n')
-        
-        # Buscamos la línea que contenga los separadores '|'
-        datos_procesados = []
-        for linea in lineas:
-            if '|' in linea:
-                datos_procesados = [x.strip() for x in linea.split('|')]
+        res_g = None
+        for api_ver, model_name in intentos_api:
+            print(f"--- Probando {model_name} en {api_ver} ---")
+            url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
+            prompt = f"Producto Amazon viral {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
+            
+            r = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+            res_json = r.json()
+            
+            if 'candidates' in res_json:
+                res_g = res_json
+                print(f"✅ Éxito con {model_name}")
                 break
-        
-        if len(datos_procesados) < 4:
-            print(f"❌ Error: No se detectaron 4 columnas. Datos: {datos_procesados}")
+            else:
+                print(f"⚠️ {model_name} falló. Continuando...")
+
+        if not res_g:
+            print(f"❌ Error final: Ningún modelo respondió. Log: {res_json}")
             sys.exit(1)
 
-        producto, busqueda, hook, cuerpo = datos_procesados[0], datos_procesados[1], datos_procesados[2], datos_procesados[3]
+        # Extracción de datos
+        texto_raw = res_g['candidates'][0]['content']['parts'][0]['text']
+        lineas = texto_raw.replace('```', '').replace('markdown', '').strip().split('\n')
+        datos = []
+        for l in lineas:
+            if '|' in l:
+                datos = [x.strip() for x in l.split('|')]
+                break
+        
+        if len(datos) < 4:
+            print(f"❌ Formato inválido en: {texto_raw}")
+            sys.exit(1)
+
+        producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
         link_afiliado = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
         
+        # Renderizado Creatomate
         print(f"--- Renderizando Video: {producto} ---")
         api_url = "[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)"
         headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         payload = {
             "template_id": TEMPLATE_ID,
-            "modifications": {
-                "Text-1.text": hook.upper(),
-                "Text-2.text": cuerpo
-            }
+            "modifications": {"Text-1.text": hook.upper(), "Text-2.text": cuerpo}
         }
         
         res_v = requests.post(api_url, headers=headers, json=payload)
         video_url = res_v.json()[0]['url']
 
-        # Guardado final
+        # Guardado
         sheet.append_row([producto, link_afiliado, video_url])
         print(f"🚀 PROCESO COMPLETADO. Fila añadida para: {producto}")
 
