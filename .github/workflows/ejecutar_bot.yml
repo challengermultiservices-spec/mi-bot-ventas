@@ -1,6 +1,6 @@
-name: Ejecucion Automatica del Bot
+name: Ejecucion Automatica del Bot con Video
 on:
-  workflow_dispatch: # Botón manual
+  workflow_dispatch: # Botón manual para probar
   schedule:
     - cron: '0 8 * * *' # 8:00 AM UTC todos los días
 
@@ -16,11 +16,26 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Instalar Dependencias
-        run: pip install requests gspread google-auth
+      - name: Instalar dependencias del sistema (Video)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg  # Necesario para procesar video
 
-      - name: Ejecutar el Bot de Analisis
+      - name: Instalar librerias de Python
+        run: |
+          pip install requests gspread google-auth moviepy gTTS
+
+      - name: Ejecutar el Bot de Analisis y Video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
+          # Si decides usar Telegram para recibir los videos gratis:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot.py
+
+      - name: Guardar videos generados (Opcional)
+        uses: actions/upload-artifact@v3
+        with:
+          name: videos-del-dia
+          path: *.mp4  # Esto guarda los videos en GitHub por si quieres bajarlos
