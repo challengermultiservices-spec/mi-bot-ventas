@@ -2,7 +2,7 @@ import os, requests, json, gspread, time, random, sys
 from google.oauth2.service_account import Credentials
 
 def ejecutar_sistema_automatico():
-    # --- CONFIGURACIÓN DE CLAVES ---
+    # --- CONFIGURACIÓN ---
     gemini_key = os.environ.get("GEMINI_API_KEY")
     creatomate_key = os.environ.get("CREATOMATE_API_KEY")
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
@@ -11,48 +11,43 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Hogar Inteligente", "Gadgets Tech", "Cocina", "Mascotas"]
+    categorias = ["Cocina", "Hogar", "Gadgets", "Mascotas"]
     cat = random.choice(categorias)
 
     try:
-        # 1. Conexión a Google Sheets
+        # 1. Google Sheets
         print("--- Conectando a Google Sheets ---")
         creds_info = json.loads(creds_raw)
         creds = Credentials.from_service_account_info(creds_info, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         client = gspread.authorize(creds)
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
-        print("✅ Conexión con Sheets exitosa.")
+        print("✅ Conexión exitosa.")
 
-        # 2. Generación con Gemini 2.5 Flash
-        print(f"--- Solicitando a Gemini 2.5 Flash (Categoría: {cat}) ---")
+        # 2. Gemini 2.5 Flash
+        print(f"--- Solicitando a Gemini 2.5 Flash ({cat}) ---")
         url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-        
-        prompt = f"Producto viral Amazon {cat}. Responde ÚNICAMENTE en este formato: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
+        prompt = f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
         
         r = requests.post(url_gemini, json={"contents": [{"parts": [{"text": prompt}]}]})
         res_json = r.json()
         
-        if 'candidates' not in res_json:
-            print(f"❌ Error en Gemini: {res_json}")
-            sys.exit(1)
-
         texto_raw = res_json['candidates'][0]['content']['parts'][0]['text']
-        # Limpieza profunda de la respuesta
+        # Limpieza de basura que pueda enviar la IA
         texto_limpio = texto_raw.replace('```', '').replace('markdown', '').replace('NOMBRE:', '').strip()
         d = [x.strip() for x in texto_limpio.split('|')]
         
         if len(d) < 4:
-            print(f"❌ Formato insuficiente: {texto_limpio}")
-            sys.exit(1)
+            print(f"❌ Error en formato: {texto_limpio}"); sys.exit(1)
 
         producto, busqueda, hook, cuerpo = d[0], d[1], d[2], d[3]
         link_afiliado = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
-        
-        # 3. Renderizado en Creatomate (URL LIMPIA Y PLANA)
+
+        # 3. Creatomate (URL DEFINIDA COMO TEXTO PLANO)
         print(f"--- Enviando a Creatomate: {producto} ---")
-        # Aseguramos que la URL no tenga caracteres invisibles de formato
-        api_url = "[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)"
+        
+        # IMPORTANTE: Definimos la URL sin ningún carácter extraño
+        api_url = str("[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)").strip()
         
         headers = {
             "Authorization": f"Bearer {creatomate_key}",
@@ -67,17 +62,17 @@ def ejecutar_sistema_automatico():
             }
         }
         
+        # Realizamos la petición con la URL limpia
         res_v = requests.post(api_url, headers=headers, json=payload)
         
         if res_v.status_code not in [200, 201]:
-            print(f"❌ Error en Creatomate: {res_v.text}")
-            sys.exit(1)
+            print(f"❌ Error Creatomate: {res_v.text}"); sys.exit(1)
             
         video_url = res_v.json()[0]['url']
 
-        # 4. Guardado final
+        # 4. Guardado
         sheet.append_row([producto, link_afiliado, video_url])
-        print(f"🚀 PROCESO COMPLETADO. Revisa tu Google Sheets.")
+        print(f"🚀 PROCESO COMPLETADO. Fila añadida para: {producto}")
 
     except Exception as e:
         print(f"❌ Error crítico: {e}")
