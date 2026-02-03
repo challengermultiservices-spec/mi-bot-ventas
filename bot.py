@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import sys
 
 def ejecutar_sistema_automatico():
-    # 1. Configuración de Credenciales
+    # 1. Configuración
     gemini_key = os.environ.get("GEMINI_API_KEY")
     creatomate_key = os.environ.get("CREATOMATE_API_KEY")
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
@@ -23,33 +23,34 @@ def ejecutar_sistema_automatico():
         client = gspread.authorize(creds)
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
 
-        # 2. Gemini: Intento de generación
-        print("--- Pidiendo producto a Gemini ---")
-        url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+        # 2. Gemini: Usando gemini-pro (El más compatible)
+        print("--- Pidiendo producto a Gemini (Modelo Pro) ---")
+        # Usamos la versión de API v1beta con gemini-pro
+        url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={gemini_key}"
         
         payload_gemini = {
-            "contents": [{"parts": [{"text": "Dame un producto viral de Amazon. Responde solo: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]
+            "contents": [{"parts": [{"text": "Dame un producto de Amazon para vender. Formato: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]
         }
         
         response = requests.post(url_gemini, json=payload_gemini)
         res_g = response.json()
 
-        # Si falla la URL por ser v1beta, probamos v1
+        # Si gemini-pro falla, intentamos una última vez con el nombre técnico completo
         if 'error' in res_g:
-            print("--- Reintentando con URL estable v1 ---")
-            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+            print("--- Reintentando con nombre técnico completo ---")
+            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key={gemini_key}"
             response = requests.post(url_gemini, json=payload_gemini)
             res_g = response.json()
 
         if 'candidates' not in res_g:
-            print(f"❌ Error Gemini: {json.dumps(res_g)}")
+            print(f"❌ Error Final de Gemini: {json.dumps(res_g, indent=2)}")
             sys.exit(1)
 
         texto_respuesta = res_g['candidates'][0]['content']['parts'][0]['text']
         datos = [d.strip() for d in texto_respuesta.split('|')]
         
         if len(datos) < 4:
-            print(f"❌ Formato incorrecto de Gemini: {texto_respuesta}")
+            print(f"❌ Formato incorrecto: {texto_respuesta}")
             sys.exit(1)
 
         producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
@@ -81,13 +82,13 @@ def ejecutar_sistema_automatico():
 
         # 4. Guardar en Sheets (Columna U es la 21)
         fila = [""] * 21 
-        fila[0] = producto        # Columna A
-        fila[1] = link_afiliado   # Columna B
-        fila[2] = video_final_url # Columna C
-        fila[20] = "AUTO-2026"     # Columna U
+        fila[0] = producto
+        fila[1] = link_afiliado
+        fila[2] = video_final_url
+        fila[20] = "AUTO-2026"
 
         sheet.append_row(fila)
-        print(f"✅ TODO OK: {producto} guardado con link {video_final_url}")
+        print(f"✅ EXITO: {producto} guardado con link de video.")
 
     except Exception as e:
         print(f"❌ ERROR CRÍTICO: {str(e)}")
