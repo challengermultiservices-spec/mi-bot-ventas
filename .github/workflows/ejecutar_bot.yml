@@ -1,18 +1,18 @@
 name: Ejecucion Automatica del Bot con Video
 on:
-  workflow_dispatch: # Botón manual
+  workflow_dispatch: # Botón manual para pruebas
   schedule:
-    - cron: '0 8 * * *' # 8:00 AM UTC todos los días
+    - cron: '0 8 * * *' # Se ejecuta a las 8:00 AM UTC
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Descargar codigo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -20,12 +20,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick
-          # Configurar ImageMagick para que permita procesar textos (seguridad de Linux)
+          # ESTA LÍNEA REPARA EL ERROR DE PERMISOS DE IMAGEMAGICK EN GITHUB ACTIONS
           sudo sed -i 's/domain="path" rights="none" pattern="@\*"/domain="path" rights="read|write" pattern="@\*"/g' /etc/ImageMagick-6/policy.xml
 
       - name: Instalar Librerias de Python
         run: |
-          pip install requests gspread google-auth moviepy gTTS
+          pip install requests gspread google-auth moviepy==1.0.3 gTTS
 
       - name: Ejecutar el Bot
         env:
@@ -33,9 +33,9 @@ jobs:
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python bot.py
 
-      - name: Guardar Video como Resultado
+      - name: Guardar Video Generado
         uses: actions/upload-artifact@v4
         with:
-          name: videos-generados
+          name: video-resultado
           path: "*.mp4"
-          retention-days: 5
+          retention-days: 3
