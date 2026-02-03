@@ -19,7 +19,7 @@ def ejecutar_sistema_infinito():
     
     # --- CAMBIO AQUÍ: USA EL ID EN LUGAR DEL NOMBRE ---
     # Pega aquí el ID largo de tu URL entre las comillas
-    ID_HOJA = "TU_ID_AQUÍ" 
+    ID_HOJA = "111910024241824164286" 
     
     try:
         # Intentamos abrir por ID para evitar errores de nombre
