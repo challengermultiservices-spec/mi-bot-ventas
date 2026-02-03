@@ -17,34 +17,31 @@ def ejecutar_sistema_automatico():
     try:
         # Conexión a Sheets
         creds_json = json.loads(creds_raw)
-        creds = Credentials.from_service_account_info(creds_json, scopes=['https://www.googleapis.com/auth/spreadsheets'])
+        creds = Credentials.from_service_account_info(creds_json, scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         client = gspread.authorize(creds)
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
 
-        # 2. Gemini con Prompt Suave (para evitar el error 'candidates')
+        # 2. Gemini: Generar contenido
         url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-        # Forzamos una respuesta simple sin temas sensibles
-        prompt_texto = "Dame un producto para el hogar que sea tendencia. Formato: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
+        prompt_texto = "Dame un producto viral de cocina para TikTok. Responde solo: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
         
         response = requests.post(url_gemini, json={"contents": [{"parts": [{"text": prompt_texto}]}]})
         res_g = response.json()
 
-        # DEPURACIÓN: Si falla, esto nos dirá por qué en la consola de GitHub
         if 'candidates' not in res_g:
-            print("❌ Error de Gemini. Respuesta completa del servidor:")
-            print(json.dumps(res_g, indent=2))
+            print(f"❌ Error Gemini: {res_g}")
             return
 
         texto_respuesta = res_g['candidates'][0]['content']['parts'][0]['text']
         datos = [d.strip() for d in texto_respuesta.split('|')]
         
         if len(datos) < 4:
-            print(f"❌ Gemini devolvió un formato incorrecto: {texto_respuesta}")
+            print("❌ Formato de respuesta incompleto")
             return
 
         producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
 
-        # 3. Link y Creatomate
+        # 3. Link de Amazon y Creatomate
         link_afiliado = f"https://www.amazon.com/s?k={busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
         
         headers_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
@@ -56,19 +53,30 @@ def ejecutar_sistema_automatico():
             }
         }
         
+        print(f"🎬 Solicitando video para: {producto}...")
         res_c = requests.post("https://api.creatomate.com/v2/renders", headers=headers_c, json=payload_c)
         
         if res_c.status_code != 200:
-            print(f"❌ Error en Creatomate: {res_c.text}")
+            print(f"❌ Error Creatomate: {res_c.text}")
             return
 
         video_final_url = res_c.json()[0]['url']
 
         # 4. Guardar en Sheets (Columna U es la 21)
+        # Llenamos una fila de 21 columnas
         fila = [""] * 21 
-        fila[0] = producto       # A
-        fila[1] = link_afiliado # B
-        fila[2] = video_final_url # C
-        fila[20] = "AUTO-2026"    # U (Código Único)
+        fila[0] = producto        # Columna A
+        fila[1] = link_afiliado  # Columna B
+        fila[2] = video_final_url # Columna C
+        fila[20] = "AUTO-2026"     # Columna U (Índice 20)
 
-        sheet.append_row(fila
+        sheet.append_row(fila)
+        
+        print(f"✅ ¡Éxito! Producto: {producto}")
+        print(f"🔗 Video: {video_final_url}")
+
+    except Exception as e:
+        print(f"❌ Error crítico: {str(e)}")
+
+if __name__ == "__main__":
+    ejecutar_sistema_automatico()
