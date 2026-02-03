@@ -11,7 +11,7 @@ def ejecutar_sistema_automatico():
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
     
     ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
-    AMAZON_TAG = "tu_tag-20" 
+    AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
     try:
