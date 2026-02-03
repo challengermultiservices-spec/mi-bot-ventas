@@ -2,7 +2,6 @@ import os, requests, json, gspread, time, random, sys
 from google.oauth2.service_account import Credentials
 
 def ejecutar_sistema_automatico():
-    # --- CONFIGURACIÓN ---
     gemini_key = os.environ.get("GEMINI_API_KEY")
     creatomate_key = os.environ.get("CREATOMATE_API_KEY")
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
@@ -11,8 +10,10 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Hogar Inteligente", "Gadgets Tech", "Mascotas", "Cocina"]
+    categorias = ["Gadgets Tech", "Hogar Inteligente", "Mascotas", "Cocina"]
     cat = random.choice(categorias)
+    
+    # Probamos v1beta que es la más flexible para cuentas nuevas PRO
     modelos = ["gemini-1.5-pro", "gemini-1.5-flash"]
 
     try:
@@ -23,19 +24,25 @@ def ejecutar_sistema_automatico():
 
         res_g = None
         for m in modelos:
-            print(f"--- Solicitando a {m} ---")
-            url = f"https://generativelanguage.googleapis.com/v1/models/{m}:generateContent?key={gemini_key}"
+            print(f"--- Intentando con {m}... ---")
+            # Cambiamos a v1beta para asegurar compatibilidad inicial
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={gemini_key}"
             p = {"contents": [{"parts": [{"text": f"Sugiere un producto viral de Amazon de {cat}. Responde: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
+            
             r = requests.post(url, json=p)
             res_json = r.json()
 
             if 'candidates' in res_json:
                 res_g = res_json
-                print(f"✅ Éxito con {m}")
+                print(f"✅ ¡Éxito con {m}!")
                 break
+            else:
+                # Esto nos dirá el error REAL de Google
+                msg = res_json.get('error', {}).get('message', 'Error desconocido')
+                print(f"⚠️ {m} falló. Motivo: {msg}")
 
         if not res_g:
-            print("❌ Error de API. Revisa tu nueva llave Tier 1.")
+            print("❌ No se pudo obtener respuesta. Verifica que la API Key en GitHub sea la nueva del Tier 1.")
             sys.exit(1)
 
         t = res_g['candidates'][0]['content']['parts'][0]['text']
@@ -48,10 +55,10 @@ def ejecutar_sistema_automatico():
             json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": d[2].upper(), "Text-2.text": d[3]}})
         
         sheet.append_row([d[0], link, res_c.json()[0]['url']])
-        print(f"🚀 ¡LOGRADO! Fila agregada en Google Sheets.")
+        print(f"🚀 ¡LOGRADO! Fila agregada.")
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error crítico: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
