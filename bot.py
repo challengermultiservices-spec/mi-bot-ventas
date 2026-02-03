@@ -1,29 +1,36 @@
-import google.generativeai as genai
 import os
-
-# Configuramos la llave
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+import requests
+import json
 
 def ejecutar():
-    print("Iniciando conexión forzada con el modelo estable...")
+    api_key = os.environ.get("GEMINI_API_KEY")
+    # Usamos la URL directa de la API de Google
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    
+    print("Enviando petición directa a los servidores de Google...")
+
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": "Dime 2 productos de cocina virales para TikTok Shop USA y un hook de 3 segundos para cada uno."}]
+        }]
+    }
+
     try:
-        # Usamos la ruta completa del sistema para que no haya pérdida
-        # 'models/gemini-1.0-pro' es el modelo más compatible que existe
-        model = genai.GenerativeModel('models/gemini-1.0-pro')
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        resultado = response.json()
         
-        prompt = "Eres un experto en ventas. Dime 2 productos de cocina virales para TikTok Shop y un hook corto."
+        # Extraemos el texto de la respuesta
+        texto = resultado['candidates'][0]['content']['parts'][0]['text']
         
-        response = model.generate_content(prompt)
-        
-        print("\n" + "🌟" * 10)
-        print("RESULTADO DEL ANÁLISIS:")
-        print(response.text)
-        print("🌟" * 10)
-        
+        print("\n" + "🚀" * 10)
+        print("¡LO LOGRAMOS! AQUÍ TIENES TUS PRODUCTOS:")
+        print(texto)
+        print("🚀" * 10)
+
     except Exception as e:
-        print(f"Error detectado: {e}")
-        print("\n--- POSIBLE SOLUCIÓN ---")
-        print("Si el error persiste, es probable que la API KEY necesite ser revisada en Google AI Studio.")
+        print(f"Error en la conexión directa: {e}")
+        print("Respuesta del servidor:", response.text)
 
 if __name__ == "__main__":
     ejecutar()
