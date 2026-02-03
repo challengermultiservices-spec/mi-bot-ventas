@@ -12,12 +12,12 @@ def ejecutar_sistema_infinito():
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
     
     # --- CONFIGURACIÓN PERSONAL ---
-    ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"  # Reemplaza con tu ID
-    TAG_ID = "chmbrand-20"    # Reemplaza con tu Tag
+    ID_HOJA = "TU_ID_AQUÍ"  # Reemplaza con tu ID de Google Sheets
+    TAG_ID = "tu_tag-20"    # Reemplaza con tu Tag de Amazon
     # ------------------------------
 
     if not creds_raw:
-        print("❌ Error: No se encontraron credenciales.")
+        print("❌ Error: No se encontraron credenciales en Secrets.")
         return
 
     try:
@@ -27,62 +27,88 @@ def ejecutar_sistema_infinito():
         creds = Credentials.from_service_account_info(creds_json, scopes=scope)
         client = gspread.authorize(creds)
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
+        print(f"✅ Conectado a Sheets: {ID_HOJA}")
 
-        # 3. Pedir los 10 productos a Gemini con Script detallado
+        # 3. Pedir los 10 productos a Gemini
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-        prompt = """Analiza los 10 productos más virales hoy. 
-        Responde UNA LÍNEA por producto con este formato:
-        Producto | Hook | Script de 15 palabras | Termino Busqueda"""
+        prompt = """Analiza los 10 productos más virales hoy en TikTok Shop y Amazon USA. 
+        Responde estrictamente UNA LÍNEA por producto con este formato:
+        Nombre del Producto | Hook | Script de 15 palabras | Termino Busqueda Amazon"""
         
         res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+        
+        if res.status_code != 200:
+            print(f"❌ Error API Gemini: {res.text}")
+            return
+
         respuesta_ia = res.json()['candidates'][0]['content']['parts'][0]['text']
         lineas = [l for l in respuesta_ia.strip().split('\n') if "|" in l]
 
-        for i, linea in enumerate(lineas[:10]):
-            datos = [d.strip() for d in linea.split('|')]
-            if len(datos) >= 4:
+        contador_exito = 0
+        for linea in lineas:
+            # Limpiamos símbolos que Gemini suele añadir
+            datos = [d.strip().replace('*', '').replace('#', '') for d in linea.split('|')]
+            
+            if len(datos) >= 4 and contador_exito < 10:
                 producto, hook, script, busqueda = datos[0], datos[1], datos[2], datos[3]
                 
                 link = f"https://www.amazon.com/s?k={busqueda.replace(' ', '+')}&tag={TAG_ID}"
-                desc = f"{hook} ✨ Get it here: {link} #amazonfinds #viral"
+                desc = f"{hook} ✨ Get it here: {link} #amazonfinds #viral #tiktokmademebuyit"
                 
                 # Guardar en Google Sheets
                 sheet.append_row([producto, hook, script, link, desc])
 
-                # 4. Intentar crear el video para el primer producto
-                if i == 0:
-                    generar_video_gratis(producto, script, i)
+                # 4. Generamos el video solo para el primero para evitar saturar el servidor
+                if contador_exito == 0:
+                    try:
+                        generar_video_gratis(producto, script, contador_exito)
+                    except Exception as e_video:
+                        print(f"⚠️ Error al crear video: {e_video}")
+                
+                contador_exito += 1
 
-        print("🚀 Proceso terminado con éxito.")
+        print(f"🚀 ¡Éxito! {contador_exito} productos guardados en Sheets.")
 
     except Exception as e:
-        print(f"❌ Error en el bot: {e}")
+        print(f"❌ Error General: {e}")
 
 def generar_video_gratis(titulo, script, id):
-    try:
-        print(f"🎬 Renderizando video para: {titulo}")
-        
-        # Audio con gTTS
-        audio_file = f"audio_{id}.mp3"
-        tts = gTTS(text=script, lang='en')
-        tts.save(audio_file)
-        audio = AudioFileClip(audio_file)
-        
-        # Fondo y Texto
-        # Usamos fuentes genéricas como 'DejaVu-Sans' que vienen en Ubuntu/GitHub
-        fondo = ColorClip(size=(720, 1280), color=(20, 20, 20)).set_duration(audio.duration)
-        
-        txt_titulo = TextClip(titulo.upper(), fontsize=50, color='yellow', font='DejaVu-Sans-Bold',
-                             method='caption', size=(600, None)).set_position(('center', 200)).set_duration(audio.duration)
-        
-        txt_script = TextClip(script, fontsize=40, color='white', font='DejaVu-Sans',
-                             method='caption', size=(600, None)).set_position('center').set_duration(audio.duration)
+    print(f"🎬 Iniciando renderizado de video: {titulo}")
+    
+    # A. Crear Audio con gTTS (Voz de Google)
+    audio_file = f"audio_{id}.mp3"
+    tts = gTTS(text=script, lang='en')
+    tts.save(audio_file)
+    audio = AudioFileClip(audio_file)
+    
+    # B. Crear Fondo Estético (Vertical 9:16)
+    duracion = audio.duration
+    fondo = ColorClip(size=(720, 1280), color=(15, 15, 15)).set_duration(duracion)
+    
+    # C. Texto del Título (Usando DejaVu-Sans que es estándar en Linux)
+    txt_titulo = TextClip(
+        titulo.upper(), 
+        fontsize=55, 
+        color='yellow', 
+        font='DejaVu-Sans-Bold',
+        method='caption', 
+        size=(600, None)
+    ).set_position(('center', 250)).set_duration(duracion)
+    
+    # D. Texto del Script (Subtítulos dinámicos)
+    txt_script = TextClip(
+        script, 
+        fontsize=45, 
+        color='white', 
+        font='DejaVu-Sans',
+        method='caption', 
+        size=(650, None)
+    ).set_position('center').set_duration(duracion)
 
-        video = CompositeVideoClip([fondo, txt_titulo, txt_script]).set_audio(audio)
-        video.write_videofile(f"video_final_{id}.mp4", fps=24, codec="libx264")
-        
-    except Exception as e:
-        print(f"⚠️ Error al crear video: {e}")
+    # E. Composición y Exportación
+    video = CompositeVideoClip([fondo, txt_titulo, txt_script]).set_audio(audio)
+    video.write_videofile(f"video_viral_{id}.mp4", fps=24, codec="libx264", audio_codec="aac")
+    print(f"✅ Video video_viral_{id}.mp4 generado con éxito.")
 
 if __name__ == "__main__":
     ejecutar_sistema_infinito()
