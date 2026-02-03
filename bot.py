@@ -10,42 +10,43 @@ async def buscar_productos():
     async with async_playwright() as p:
         print("Iniciando navegador...")
         browser = await p.chromium.launch(headless=True)
-        # Disfraz de navegador real para evitar el Timeout
+        # Disfraz avanzado: Simulamos una resolución de pantalla y un navegador real
         context = await browser.new_context(
+            viewport={'width': 1280, 'height': 800},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
         
         try:
-            print("Entrando a Amazon (con paciencia)...")
-            # Quitamos 'networkidle' para que no espere a que cargue toda la publicidad pesada
-            await page.goto('https://www.amazon.com/gp/bestsellers/kitchen/', wait_until="domcontentloaded", timeout=60000)
+            # Cambiamos la URL a una búsqueda de productos virales (menos bloqueos)
+            print("Buscando productos virales de cocina en Amazon...")
+            await page.goto('https://www.amazon.com/s?k=tiktok+kitchen+gadgets', wait_until="domcontentloaded")
             
-            # Esperamos un poco a que aparezcan los productos
-            await page.wait_for_timeout(5000) 
-
-            # Buscamos los títulos (ajustado para ser más preciso)
-            titulos = await page.locator('div[class*="p13n-sc-truncate"]').all_inner_texts()
+            # Esperamos a que los productos carguen
+            await page.wait_for_selector('h2 span', timeout=15000)
             
-            if not titulos:
-                # Intento alternativo si el primero falla
-                titulos = await page.locator('div._cDE39_p13n-sc-css-line-clamp-3_g30T1').all_inner_texts()
+            # Extraemos los nombres de los productos
+            titulos = await page.locator('h2 span').all_inner_texts()
+            
+            # Limpiamos la lista (quitamos textos vacíos)
+            productos = [t.strip() for t in titulos if len(t) > 10]
+            
+            print(f"Productos detectados: {len(productos)}")
 
-            print(f"Productos detectados: {len(titulos)}")
-            lista_texto = "\n".join(titulos[:10])
-
-            if len(titulos) > 0:
-                prompt = f"Analiza estos productos tendencia y dime los 2 mejores para TikTok Shop. Dame un Gancho (Hook) para el video: {lista_texto}"
+            if len(productos) > 0:
+                lista_texto = "\n".join(productos[:12])
+                prompt = f"De esta lista de gadgets de cocina virales, elige los 2 más llamativos para vender en TikTok Shop USA. Para cada uno dame: 1) Nombre corto, 2) Por qué es viral, 3) Un 'Hook' (gancho) de 3 segundos para el video: {lista_texto}"
+                
                 response = model.generate_content(prompt)
-                print("\n" + "="*30)
-                print("🤖 RESULTADO DE LA IA:")
+                print("\n" + "⭐" * 20)
+                print("🤖 RECOMENDACIÓN DE LA IA:")
                 print(response.text)
-                print("="*30)
+                print("⭐" * 20)
             else:
-                print("No logré leer los nombres, Amazon nos bloqueó la vista.")
+                print("Amazon sigue ocultando los datos. Vamos a intentar un método alternativo en el siguiente paso.")
 
         except Exception as e:
-            print(f"Hubo un detalle: {e}")
+            print(f"Error: {e}")
         finally:
             await browser.close()
 
