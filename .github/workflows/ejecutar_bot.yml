@@ -1,23 +1,23 @@
 name: Ejecucion del Bot de Ventas
 on:
-  workflow_dispatch: # Esto permite que lo prendas manualmente
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar codigo del repo
+      - name: Descargar codigo
         uses: actions/checkout@v3
 
       - name: Configurar Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.10' # Subimos a la 3.10 para evitar errores de vejez
 
-      - name: Instalar herramientas necesarias
+      - name: Instalar herramientas
         run: |
-          pip install playwright google-generativeai
-          playwright install chromium
+          python -m pip install --upgrade pip
+          pip install -U google-generativeai
 
       - name: Ejecutar el Bot de Analisis
         env:
