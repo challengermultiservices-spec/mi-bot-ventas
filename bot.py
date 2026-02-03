@@ -10,13 +10,13 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Hogar Inteligente", "Gadgets Tech", "Cocina", "Mascotas"]
+    categorias = ["Hogar", "Gadgets", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
 
-    # Nombres exactos para la API v1 (Producción)
+    # Nombres BASE oficiales. Estos son los más compatibles.
     intentos_api = [
-        ("v1", "gemini-1.5-flash-latest"),
-        ("v1", "gemini-1.5-pro-latest"),
+        ("v1beta", "gemini-1.5-flash"),
+        ("v1beta", "gemini-1.5-pro"),
         ("v1beta", "gemini-2.0-flash-exp")
     ]
 
@@ -31,12 +31,11 @@ def ejecutar_sistema_automatico():
 
         res_g = None
         for api_ver, model_name in intentos_api:
-            print(f"--- Solicitando a {model_name} ({api_ver}) ---")
+            print(f"--- Intentando con {model_name} en {api_ver} ---")
             url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
             
             payload = {
-                "contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}],
-                "generationConfig": {"temperature": 0.7}
+                "contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]
             }
             
             r = requests.post(url, json=payload)
@@ -46,53 +45,35 @@ def ejecutar_sistema_automatico():
                 res_g = res_json
                 print(f"✅ ¡Éxito con {model_name}!")
                 break
-            elif 'error' in res_json:
-                codigo = res_json['error']['code']
-                msg = res_json['error']['message']
-                print(f"⚠️ Intento fallido ({codigo}): {msg}")
-                if codigo == 429:
-                    print("🚀 Cuota excedida. Esperando 45 segundos para limpiar el túnel...")
-                    time.sleep(45)
-                else:
-                    time.sleep(5)
+            else:
+                err = res_json.get('error', {})
+                print(f"⚠️ Fallo {model_name}: {err.get('message', 'Sin mensaje')}")
+                time.sleep(2)
 
         if not res_g:
-            print("❌ No se pudo obtener respuesta de Gemini tras todos los reintentos.")
+            print("❌ Ningún modelo funcionó. Verificando disponibilidad de modelos para tu cuenta...")
+            # Diagnóstico: Listar modelos disponibles
+            diag_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
+            diag_r = requests.get(diag_url).json()
+            modelos_disponibles = [m['name'] for m in diag_r.get('models', [])]
+            print(f"DEBUG: Modelos que tu API Key puede ver: {modelos_disponibles}")
             sys.exit(1)
 
-        # Procesamiento de la respuesta
-        texto_raw = res_g['candidates'][0]['content']['parts'][0]['text']
-        lineas = texto_raw.replace('```', '').replace('markdown', '').strip().split('\n')
-        datos = []
-        for l in lineas:
-            if '|' in l:
-                datos = [x.strip() for x in l.split('|')]
-                break
+        # Procesamiento
+        texto = res_g['candidates'][0]['content']['parts'][0]['text']
+        datos = [x.strip() for x in texto.replace('```', '').split('|') if x.strip()]
         
         if len(datos) < 4:
-            print(f"❌ Error de formato en respuesta: {texto_raw}")
-            sys.exit(1)
+            # Reintento de partición si falló el pipe
+            datos = [x.strip() for x in texto.split('\n') if x.strip()][:4]
 
-        # Renderizado en Creatomate
+        # Creatomate
         print(f"--- Renderizando Video: {datos[0]} ---")
-        api_url = "[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)"
-        headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
-        payload_v = {
-            "template_id": TEMPLATE_ID,
-            "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}
-        }
+        res_v = requests.post("[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)", 
+            headers={"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"},
+            json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}})
         
-        res_v = requests.post(api_url, headers=headers, json=payload_v)
         video_url = res_v.json()[0]['url']
-
-        # Guardado final
         link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){datos[1].replace(' ', '+')}&tag={AMAZON_TAG}"
-        sheet.append_row([datos[0], link, video_url])
-        print(f"🚀 ¡LOGRADO! Fila añadida correctamente.")
-
-    except Exception as e:
-        print(f"❌ Error crítico: {e}")
-        sys.exit(1)
-
-if __name__ == "__main__":
-    ejecutar_sistema_automatico()
+        
+        sheet.append_row
