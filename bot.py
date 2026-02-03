@@ -5,6 +5,7 @@ def ejecutar_sistema_automatico():
     # --- CONFIGURACIÓN DE LLAVES ---
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     creatomate_key = os.environ.get("CREATOMATE_API_KEY", "").strip()
+    pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "").strip()
     
     ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
@@ -13,74 +14,65 @@ def ejecutar_sistema_automatico():
 
     try:
         # 1. CONEXIÓN A GOOGLE SHEETS
-        print("--- Conectando a Google Sheets ---")
         creds_info = json.loads(creds_raw)
         creds = Credentials.from_service_account_info(creds_info, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Sheets Conectado")
 
-        # 2. GENERACIÓN CON GEMINI 2.5 FLASH
+        # 2. GEMINI: GENERACIÓN DE PRODUCTO Y BÚSQUEDA
         url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-        cat = random.choice(["Gadgets Tecnológicos", "Hogar Inteligente", "Cocina Viral", "Mascotas", "Fitness"])
+        cat = random.choice(["Gadgets", "Kitchen", "Home", "Pets", "Smart Technology"])
         
-        prompt = (f"Actúa como experto en Amazon. Sugiere un producto viral de {cat}. "
-                  "Responde ÚNICAMENTE un objeto JSON con estas llaves: "
-                  "\"producto\", \"busqueda\", \"hook\", \"script\". "
-                  "El script debe ser narración pura, sin notas visuales, max 250 caracteres.")
+        prompt = (f"Product Amazon {cat}. Return ONLY a JSON object with: "
+                  "\"producto\", \"busqueda_pexels\", \"hook\", \"script\". "
+                  "In 'busqueda_pexels' use 2 English keywords for video stock.")
         
         r = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
-        res_text = r.json()['candidates'][0]['content']['parts'][0]['text']
+        datos = json.loads(re.search(r'\{.*\}', r.text, re.DOTALL).group(0))
         
-        # Extracción de JSON con "red de seguridad"
-        match = re.search(r'\{.*\}', res_text, re.DOTALL)
-        if not match:
-            raise Exception("La IA no devolvió un formato válido")
-            
-        datos = json.loads(match.group(0))
-        
-        # Normalización de nombres (Evita que salga 'Producto Viral')
-        prod = datos.get('producto') or datos.get('PRODUCTO') or datos.get('nombre') or "Gadget Amazon"
-        busq = datos.get('busqueda') or datos.get('BUSQUEDA') or prod
-        hook = datos.get('hook') or datos.get('HOOK') or "¡Tienes que ver esto!"
-        scri = datos.get('script') or datos.get('SCRIPT') or "Este producto cambiará tu vida."
-        
-        print(f"✅ IA seleccionó: {prod}")
+        prod = datos.get('producto', 'Cool Gadget')
+        query_video = datos.get('busqueda_pexels', 'technology')
+        print(f"✅ IA generó: {prod} (Buscando video para: {query_video})")
 
-        # 3. ENVÍO A CREATOMATE (CON ESCUDO ANTI-ERROR 0)
-        print(f"--- Renderizando Video: {prod} ---")
+        # 3. PEXELS: BUSCAR VIDEO DE FONDO
+        video_url_fondo = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28" # Default
+        print(f"--- Buscando en Pexels ---")
+        try:
+            p_url = f"https://api.pexels.com/videos/search?query={query_video}&per_page=1&orientation=portrait"
+            p_res = requests.get(p_url, headers={"Authorization": pexels_key}, timeout=15)
+            if p_res.status_code == 200 and p_res.json()['videos']:
+                # Extraemos el link del video en alta calidad
+                video_url_fondo = p_res.json()['videos'][0]['video_files'][0]['link']
+                print("🎬 Video encontrado en Pexels")
+        except Exception as e:
+            print(f"⚠️ Pexels falló, usando fondo por defecto: {e}")
+
+        # 4. CREATOMATE: RENDERIZADO FINAL
+        print(f"--- Renderizando en Creatomate ---")
         u_c = "https://api.creatomate.com/v2/renders"
-        h_c = {
-            "Authorization": f"Bearer {creatomate_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0"
-        }
+        h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         p_c = {
             "template_id": TEMPLATE_ID,
             "modifications": {
-                "Text-1.text": hook.upper()[:60],
-                "Text-2.text": scri[:300]
+                "Video.source": video_url_fondo,
+                "Text-1.text": datos.get('hook', 'AMAZON FIND').upper()[:60],
+                "Text-2.text": datos.get('script', 'Check this out!')[:250]
             }
         }
         
-        video_url = "Pendiente de procesar" # Fallback por si hay micro-corte
-        try:
-            res_v = requests.post(u_c, headers=h_c, json=p_c, timeout=20)
-            if res_v.status_code in [200, 201, 202]:
-                video_url = res_v.json()[0]['url']
-                print("✅ Video enviado correctamente a Creatomate.")
-            else:
-                print(f"⚠️ Aviso Creatomate (Status {res_v.status_code}): {res_v.text}")
-        except Exception:
-            print("⚠️ Bypass: El video se envió pero la red cerró la conexión antes de confirmar.")
+        res_v = requests.post(u_c, headers=h_c, json=p_c, timeout=30)
+        video_final = "Error de render"
+        if res_v.status_code in [200, 201, 202]:
+            video_final = res_v.json()[0]['url']
 
-        # 4. GUARDADO FINAL EN GOOGLE SHEETS
-        link_amz = f"https://www.amazon.com/s?k={busq.replace(' ', '+')}&tag={AMAZON_TAG}"
-        sheet.append_row([prod, link_amz, video_url])
-        print(f"🚀 ÉXITO: '{prod}' guardado en Google Sheets.")
+        # 5. GUARDADO EN SHEETS
+        link_amz = f"https://www.amazon.com/s?k={prod.replace(' ', '+')}&tag={AMAZON_TAG}"
+        sheet.append_row([prod, link_amz, video_final])
+        print(f"🚀 TODO LISTO: {prod} en tu Sheets.")
 
     except Exception as e:
-        print(f"❌ Error crítico en la ejecución: {e}")
+        print(f"❌ Error crítico: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
