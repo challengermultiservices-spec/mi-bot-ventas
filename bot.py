@@ -2,41 +2,57 @@ import os
 import requests
 import json
 
-def ejecutar():
+def ejecutar_bot_definitivo():
     api_key = os.environ.get("GEMINI_API_KEY")
     
-    # CAMBIO CRUCIAL: Usamos la versión 'v1' y el modelo exacto de producción
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # Jerarquía de modelos para evitar el error 404
+    # Si uno no existe en tu región o versión, el bot salta al siguiente
+    modelos_a_probar = [
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ]
     
-    print("Conectando con la API de Producción de Google (v1)...")
-
     headers = {'Content-Type': 'application/json'}
-    data = {
+    payload = {
         "contents": [{
-            "parts": [{"text": "Actúa como experto en TikTok Shop. Dime 2 productos de cocina virales hoy 2 de febrero de 2026 y un hook para cada uno."}]
+            "parts": [{"text": "Analiza las tendencias de TikTok Shop USA de hoy febrero 2026. Dime los 3 productos de cocina más vendidos, su gancho (hook) y por qué funcionan. Responde en español."}]
         }]
     }
 
-    try:
-        response = requests.post(url, headers=headers, data=json.dumps(data))
+    print("--- INICIANDO PROTOCOLO DE CONEXIÓN TOTAL ---")
+    
+    exito = False
+    for modelo in modelos_a_probar:
+        if exito: break
         
-        # Si el servidor responde con error, lo atrapamos aquí
-        if response.status_code != 200:
-            print(f"Error del servidor ({response.status_code}): {response.text}")
-            return
+        # Probamos tanto la ruta v1 como v1beta automáticamente
+        for version in ["v1", "v1beta"]:
+            url = f"https://generativelanguage.googleapis.com/{version}/models/{modelo}:generateContent?key={api_key}"
+            
+            try:
+                print(f"Probando: {modelo} vía {version}...")
+                response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=10)
+                
+                if response.status_code == 200:
+                    resultado = response.json()
+                    texto = resultado['candidates'][0]['content']['parts'][0]['text']
+                    
+                    print("\n" + "🌟" * 15)
+                    print(f"SISTEMA ONLINE - MODELO: {modelo}")
+                    print(texto)
+                    print("🌟" * 15)
+                    
+                    exito = True
+                    break
+                else:
+                    print(f"Respuesta {response.status_code} en {modelo}")
+            except Exception as e:
+                continue
 
-        resultado = response.json()
-        
-        # Extraemos el texto de la respuesta
-        texto = resultado['candidates'][0]['content']['parts'][0]['text']
-        
-        print("\n" + "✅" * 10)
-        print("¡POR FIN! AQUÍ TIENES TUS PRODUCTOS:")
-        print(texto)
-        print("✅" * 10)
-
-    except Exception as e:
-        print(f"Error inesperado: {e}")
+    if not exito:
+        print("❌ ERROR CRÍTICO: No se pudo conectar con ningún nodo de Google.")
+        print("REVISIÓN FINAL: Asegúrate que tu API KEY en Secrets no tenga espacios y sea válida.")
 
 if __name__ == "__main__":
-    ejecutar()
+    ejecutar_bot_definitivo()
