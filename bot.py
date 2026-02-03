@@ -5,40 +5,48 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 def ejecutar_sistema_automatico():
-    # 1. Configuración de Credenciales y IDs
+    # 1. Configuración de Credenciales
     gemini_key = os.environ.get("GEMINI_API_KEY")
     creatomate_key = os.environ.get("CREATOMATE_API_KEY")
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
     
     ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
-    AMAZON_TAG = "chmbrand-20" # <--- AQUÍ ESTÁ TU ID DE AFILIADO
+    AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
     try:
-        # 2. Conexión a Google Sheets
+        # Conexión a Sheets
         creds_json = json.loads(creds_raw)
-        scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_info(creds_json, scopes=scope)
+        creds = Credentials.from_service_account_info(creds_json, scopes=['https://www.googleapis.com/auth/spreadsheets'])
         client = gspread.authorize(creds)
         sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
 
-        # 3. Gemini: Generar contenido viral
+        # 2. Gemini con Prompt Suave (para evitar el error 'candidates')
         url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-        prompt_texto = "Dame el producto más viral de Amazon hoy. Responde solo en este formato: PRODUCTO | TERMINO_BUSQUEDA | HOOK | CUERPO_SCRIPT"
+        # Forzamos una respuesta simple sin temas sensibles
+        prompt_texto = "Dame un producto para el hogar que sea tendencia. Formato: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
         
-        res_g = requests.post(url_gemini, json={"contents": [{"parts": [{"text": prompt_texto}]}]}).json()
-        datos = res_g['candidates'][0]['content']['parts'][0]['text'].split('|')
-        
-        producto = datos[0].strip()
-        busqueda = datos[1].strip()
-        hook = datos[2].strip()
-        cuerpo = datos[3].strip()
+        response = requests.post(url_gemini, json={"contents": [{"parts": [{"text": prompt_texto}]}]})
+        res_g = response.json()
 
-        # 4. Crear Link de Afiliado Amazon
+        # DEPURACIÓN: Si falla, esto nos dirá por qué en la consola de GitHub
+        if 'candidates' not in res_g:
+            print("❌ Error de Gemini. Respuesta completa del servidor:")
+            print(json.dumps(res_g, indent=2))
+            return
+
+        texto_respuesta = res_g['candidates'][0]['content']['parts'][0]['text']
+        datos = [d.strip() for d in texto_respuesta.split('|')]
+        
+        if len(datos) < 4:
+            print(f"❌ Gemini devolvió un formato incorrecto: {texto_respuesta}")
+            return
+
+        producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
+
+        # 3. Link y Creatomate
         link_afiliado = f"https://www.amazon.com/s?k={busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
-
-        # 5. Creatomate: Generar Video Automático (Cero copiar/pegar)
-        print(f"🎬 Generando video para {producto}...")
+        
         headers_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         payload_c = {
             "template_id": TEMPLATE_ID,
@@ -49,24 +57,18 @@ def ejecutar_sistema_automatico():
         }
         
         res_c = requests.post("https://api.creatomate.com/v2/renders", headers=headers_c, json=payload_c)
-        render_data = res_c.json()
         
-        # Obtenemos el link del video generado
-        video_final_url = render_data[0]['url']
+        if res_c.status_code != 200:
+            print(f"❌ Error en Creatomate: {res_c.text}")
+            return
 
-        # 6. Guardar todo en Sheets (Código Único en Columna U)
-        # La columna U es la posición 21 (índice 20 en Python)
+        video_final_url = res_c.json()[0]['url']
+
+        # 4. Guardar en Sheets (Columna U es la 21)
         fila = [""] * 21 
-        fila[0] = producto       # Columna A
-        fila[1] = link_afiliado # Columna B
-        fila[2] = video_final_url # Columna C (Link para descargar el video)
-        fila[20] = "AF-2026"    # Columna U (Código Único)
+        fila[0] = producto       # A
+        fila[1] = link_afiliado # B
+        fila[2] = video_final_url # C
+        fila[20] = "AUTO-2026"    # U (Código Único)
 
-        sheet.append_row(fila)
-        print(f"✅ ¡Éxito total! Video y link de afiliado guardados.")
-
-    except Exception as e:
-        print(f"❌ Error en el proceso: {e}")
-
-if __name__ == "__main__":
-    ejecutar_sistema_automatico()
+        sheet.append_row(fila
