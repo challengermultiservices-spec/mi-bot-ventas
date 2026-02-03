@@ -10,57 +10,48 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Mascotas", "Hogar Inteligente", "Gadgets Tech", "Cocina"]
+    categorias = ["Cocina", "Gadgets Tech", "Hogar", "Mascotas"]
     cat = random.choice(categorias)
-    
-    # Usamos los nombres de modelos oficiales para la versión v1
-    modelos = ["gemini-1.5-pro", "gemini-1.5-flash"]
 
     try:
-        print(f"--- Ejecución PRO Tier 1 | Categoría: {cat} ---")
-        creds = Credentials.from_service_account_info(json.loads(creds_raw), 
-            scopes=['[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)', '[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)'])
-        sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
+        print(f"--- Autenticando en Google Sheets ---")
+        info_credenciales = json.loads(creds_raw)
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        
+        # Nueva forma de autenticación más robusta
+        creds = Credentials.from_service_account_info(info_credenciales, scopes=scopes)
+        client = gspread.authorize(creds)
+        sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
+        print("✅ Conexión con Sheets exitosa.")
 
-        res_g = None
-        for m in modelos:
-            print(f"--- Solicitando a {m} vía v1 estable... ---")
-            url = f"[https://generativelanguage.googleapis.com/v1/models/](https://generativelanguage.googleapis.com/v1/models/){m}:generateContent?key={gemini_key}"
-            p = {"contents": [{"parts": [{"text": f"Eres un experto en Amazon. Sugiere un producto viral de {cat}. Responde únicamente con este formato: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
-            
-            r = requests.post(url, json=p)
-            res_json = r.json()
+        # --- Gemini ---
+        print(f"--- Solicitando producto de {cat} a Gemini Pro ---")
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={gemini_key}"
+        payload = {"contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
+        
+        r = requests.post(url, json=payload)
+        res_json = r.json()
 
-            if 'candidates' in res_json:
-                res_g = res_json
-                print(f"✅ ¡Conexión exitosa con {m}!")
-                break
-            else:
-                error_msg = res_json.get('error', {}).get('message', 'Error desconocido')
-                print(f"⚠️ {m} no disponible: {error_msg}")
-
-        if not res_g:
-            print("❌ No se pudo obtener respuesta de la API v1. Revisa tu facturación en Google Cloud.")
+        if 'candidates' not in res_json:
+            print(f"❌ Error en Gemini: {res_json}")
             sys.exit(1)
 
-        # Limpieza de la respuesta (quitamos posibles comillas de código)
-        t = res_g['candidates'][0]['content']['parts'][0]['text'].replace('```', '').strip()
+        t = res_json['candidates'][0]['content']['parts'][0]['text'].replace('```', '').strip()
         d = [x.strip() for x in t.split('|')]
         
-        if len(d) < 4:
-            print(f"❌ Formato de respuesta insuficiente: {t}")
-            sys.exit(1)
-
-        link = f"https://www.amazon.com/s?k={d[1].replace(' ', '+')}&tag={AMAZON_TAG}"
+        link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){d[1].replace(' ', '+')}&tag={AMAZON_TAG}"
         
+        # --- Creatomate ---
         print(f"--- Renderizando Video: {d[0]} ---")
-        res_c = requests.post("https://api.creatomate.com/v2/renders", 
+        res_c = requests.post("[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)", 
             headers={"Authorization": f"Bearer {creatomate_key}"}, 
             json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": d[2].upper(), "Text-2.text": d[3]}})
         
-        # Guardado final
-        sheet.append_row([d[0], link, res_c.json()[0]['url']])
-        print(f"🚀 ¡ÉXITO! Fila añadida correctamente.")
+        video_url = res_c.json()[0]['url']
+
+        # --- Guardado ---
+        sheet.append_row([d[0], link, video_url])
+        print(f"🚀 ¡LOGRADO! Fila añadida para {d[0]}.")
 
     except Exception as e:
         print(f"❌ Error crítico: {e}")
