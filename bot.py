@@ -1,56 +1,54 @@
 import os
 import requests
 import json
+import gspread
+from google.oauth2.service_account import Credentials
 
-def ejecutar_diagnostico_y_bot():
+def ejecutar_sistema_infinito():
+    # 1. Cargar credenciales desde los Secrets de GitHub
     api_key = os.environ.get("GEMINI_API_KEY")
-    base_url = "https://generativelanguage.googleapis.com/v1beta"
+    creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
     
-    print("--- PROTOCOLO DE AUTO-DESCUBRIMIENTO ---")
+    if not creds_raw:
+        print("❌ Error: No se encontró la llave GOOGLE_SHEETS_CREDENTIALS")
+        return
+
+    creds_json = json.loads(creds_raw)
+    
+    # 2. Configurar permisos de Google
+    scope = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    creds = Credentials.from_service_account_info(creds_json, scopes=scope)
+    client = gspread.authorize(creds)
+    
+    # 3. Abrir tu Google Sheets
+    # CAMBIA "Nombre de tu Hoja" por el nombre real de tu archivo de Sheets
+    try:
+        sheet = client.open("Nombre de tu Hoja").sheet1
+        print("✅ Conectado a Google Sheets")
+    except Exception as e:
+        print(f"❌ Error al abrir la hoja: {e}")
+        return
+
+    # 4. Obtener tendencia de Gemini 2.5 Flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    prompt = "Dame 3 productos de cocina virales en TikTok Shop USA hoy. Responde SOLO en este formato: Producto | Por qué es viral | Hook"
     
     try:
-        # PASO 1: Preguntar a Google qué modelos ve esta llave
-        print("Consultando modelos disponibles para tu cuenta...")
-        list_url = f"{base_url}/models?key={api_key}"
-        res = requests.get(list_url)
+        res = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+        respuesta = res.json()
+        texto_ia = respuesta['candidates'][0]['content']['parts'][0]['text']
         
-        if res.status_code != 200:
-            print(f"❌ Error de cuenta ({res.status_code}): {res.text}")
-            return
-
-        modelos = res.json().get('models', [])
-        if not modelos:
-            print("❌ Tu llave no tiene acceso a ningún modelo. Revisa AI Studio.")
-            return
-
-        # PASO 2: Usar el primer modelo disponible que soporte generación
-        modelo_activo = None
-        for m in modelos:
-            if "generateContent" in m.get('supportedGenerationMethods', []):
-                modelo_activo = m['name'] # Ya viene como 'models/gemini-...'
-                break
+        # 5. Escribir en la hoja (Creación infinita de filas)
+        lineas = texto_ia.strip().split('\n')
+        for linea in lineas:
+            if "|" in linea:
+                datos = [d.strip() for d in linea.split('|')]
+                sheet.append_row(datos)
         
-        if not modelo_activo:
-            print("❌ No se encontró un modelo con permisos de escritura.")
-            return
-
-        print(f"✅ Modelo detectado y listo: {modelo_activo}")
-
-        # PASO 3: Ejecutar la consulta con el modelo que SÍ existe
-        url_gen = f"https://generativelanguage.googleapis.com/v1beta/{modelo_activo}:generateContent?key={api_key}"
-        payload = {
-            "contents": [{"parts": [{"text": "Dime 2 productos de cocina virales en TikTok Shop USA hoy."}]}]
-        }
-        
-        response = requests.post(url_gen, json=payload)
-        resultado = response.json()
-        
-        print("\n" + "🚀" * 10)
-        print(resultado['candidates'][0]['content']['parts'][0]['text'])
-        print("🚀" * 10)
+        print(f"🚀 ¡Éxito! Se han añadido {len(lineas)} tendencias a tu hoja.")
 
     except Exception as e:
-        print(f"Fallo general: {e}")
+        print(f"❌ Error en el proceso: {e}")
 
 if __name__ == "__main__":
-    ejecutar_diagnostico_y_bot()
+    ejecutar_sistema_infinito()
