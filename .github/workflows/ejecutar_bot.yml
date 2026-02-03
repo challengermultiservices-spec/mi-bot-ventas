@@ -1,10 +1,10 @@
-name: Bot de Ventas PRO
+name: Bot Ventas PRO Automático
 
 on:
   schedule:
-    # Se ejecuta 4 veces al día (Cada 6 horas)
+    # Ejecución cada 6 horas para mantener flujo constante
     - cron: '0 0,6,12,18 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Botón manual
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.10'
       - run: pip install requests gspread google-auth
-      - name: Ejecutar bot.py
+      - name: Ejecutar Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
