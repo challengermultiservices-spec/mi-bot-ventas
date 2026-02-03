@@ -10,14 +10,14 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Gadgets Tech", "Hogar Inteligente", "Cocina", "Mascotas"]
+    categorias = ["Hogar", "Gadgets", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
 
-    # Lista de intentos: (Versión API, Nombre Modelo)
+    # Reordenamos: 2.0 Flash suele ser el más estable para Tier 1 nuevo
     intentos_api = [
-        ("v1", "gemini-1.5-flash"), 
-        ("v1beta", "gemini-1.5-pro"),
-        ("v1beta", "gemini-2.0-flash")
+        ("v1beta", "gemini-2.0-flash"),
+        ("v1", "gemini-1.5-flash"),
+        ("v1beta", "gemini-1.5-pro")
     ]
 
     try:
@@ -31,7 +31,7 @@ def ejecutar_sistema_automatico():
 
         res_g = None
         for api_ver, model_name in intentos_api:
-            print(f"--- Probando {model_name} en {api_ver} ---")
+            print(f"--- Intentando con {model_name} ({api_ver}) ---")
             url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
             prompt = f"Producto Amazon viral {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
             
@@ -40,16 +40,20 @@ def ejecutar_sistema_automatico():
             
             if 'candidates' in res_json:
                 res_g = res_json
-                print(f"✅ Éxito con {model_name}")
+                print(f"✅ ¡Éxito con {model_name}!")
                 break
+            elif 'error' in res_json and res_json['error']['code'] == 429:
+                print(f"⚠️ Cuota agotada temporalmente. Esperando 30 segundos...")
+                time.sleep(30) # Pausa estratégica para "enfriar" la API
             else:
-                print(f"⚠️ {model_name} falló. Continuando...")
+                print(f"⚠️ {model_name} no disponible. Reintentando con otro...")
+                time.sleep(5)
 
         if not res_g:
-            print(f"❌ Error final: Ningún modelo respondió. Log: {res_json}")
+            print(f"❌ Error final: Agotado límite de Google. Log: {res_json}")
             sys.exit(1)
 
-        # Extracción de datos
+        # Procesamiento de texto
         texto_raw = res_g['candidates'][0]['content']['parts'][0]['text']
         lineas = texto_raw.replace('```', '').replace('markdown', '').strip().split('\n')
         datos = []
@@ -59,27 +63,24 @@ def ejecutar_sistema_automatico():
                 break
         
         if len(datos) < 4:
-            print(f"❌ Formato inválido en: {texto_raw}")
-            sys.exit(1)
+            print(f"❌ Formato inválido."); sys.exit(1)
 
-        producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
-        link_afiliado = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
-        
         # Renderizado Creatomate
-        print(f"--- Renderizando Video: {producto} ---")
+        print(f"--- Generando Video para: {datos[0]} ---")
         api_url = "[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)"
         headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         payload = {
             "template_id": TEMPLATE_ID,
-            "modifications": {"Text-1.text": hook.upper(), "Text-2.text": cuerpo}
+            "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}
         }
         
         res_v = requests.post(api_url, headers=headers, json=payload)
         video_url = res_v.json()[0]['url']
 
         # Guardado
-        sheet.append_row([producto, link_afiliado, video_url])
-        print(f"🚀 PROCESO COMPLETADO. Fila añadida para: {producto}")
+        link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){datos[1].replace(' ', '+')}&tag={AMAZON_TAG}"
+        sheet.append_row([datos[0], link, video_url])
+        print(f"🚀 ¡FINALIZADO! Fila agregada en Sheets.")
 
     except Exception as e:
         print(f"❌ Error crítico: {e}")
