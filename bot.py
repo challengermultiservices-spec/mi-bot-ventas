@@ -13,11 +13,11 @@ def ejecutar_sistema_automatico():
     categorias = ["Hogar", "Gadgets", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
 
-    # Intentos con nombres base oficiales
+    # USAMOS LOS NOMBRES QUE EL DEBUG CONFIRMÓ
     intentos_api = [
-        ("v1beta", "gemini-1.5-flash"),
-        ("v1beta", "gemini-1.5-pro"),
-        ("v1", "gemini-1.5-flash")
+        ("v1beta", "gemini-2.5-flash"), 
+        ("v1beta", "gemini-2.0-flash"),
+        ("v1beta", "gemini-1.5-flash-latest")
     ]
 
     try:
@@ -33,7 +33,7 @@ def ejecutar_sistema_automatico():
         # 2. Gemini
         res_g = None
         for api_ver, model_name in intentos_api:
-            print(f"--- Intentando con {model_name} en {api_ver} ---")
+            print(f"--- Solicitando a {model_name}... ---")
             url = f"https://generativelanguage.googleapis.com/{api_ver}/models/{model_name}:generateContent?key={gemini_key}"
             payload = {"contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde SOLO: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
             
@@ -45,25 +45,22 @@ def ejecutar_sistema_automatico():
                     print(f"✅ ¡Éxito con {model_name}!")
                     break
                 else:
-                    print(f"⚠️ Fallo {model_name}: {res_json.get('error', {}).get('message', 'Desconocido')}")
+                    print(f"⚠️ {model_name} no respondió: {res_json.get('error', {}).get('message', 'Error de cuota o región')}")
             except Exception as e:
-                print(f"⚠️ Error de red con {model_name}: {e}")
+                print(f"⚠️ Error de red: {e}")
             
-            time.sleep(2)
+            time.sleep(5) # Pausa de cortesía para la API
 
         if not res_g:
-            print("--- INICIANDO DIAGNÓSTICO DE MODELOS ---")
-            diag_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={gemini_key}"
-            diag_r = requests.get(diag_url).json()
-            modelos_disponibles = [m['name'] for m in diag_r.get('models', [])]
-            print(f"DEBUG: Modelos que tu API Key puede ver: {modelos_disponibles}")
+            print("❌ No se pudo conectar con los nuevos modelos. Verifica tu facturación.")
             sys.exit(1)
 
         # 3. Procesamiento
         texto = res_g['candidates'][0]['content']['parts'][0]['text']
-        datos = [x.strip() for x in texto.replace('```', '').split('|') if x.strip()]
+        datos = [x.strip() for x in texto.replace('```', '').replace('markdown', '').split('|') if x.strip()]
         
         if len(datos) < 4:
+            # Fallback por si responde en líneas
             datos = [x.strip() for x in texto.split('\n') if x.strip()][:4]
 
         # 4. Creatomate
@@ -72,7 +69,10 @@ def ejecutar_sistema_automatico():
         headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         payload_v = {
             "template_id": TEMPLATE_ID,
-            "modifications": {"Text-1.text": datos[2].upper(), "Text-2.text": datos[3]}
+            "modifications": {
+                "Text-1.text": datos[2].upper(),
+                "Text-2.text": datos[3]
+            }
         }
         res_v = requests.post(api_url, headers=headers, json=payload_v)
         video_url = res_v.json()[0]['url']
@@ -83,7 +83,7 @@ def ejecutar_sistema_automatico():
         print(f"🚀 ¡LOGRADO! Fila añadida para {datos[0]}")
 
     except Exception as e:
-        print(f"❌ Error crítico en el bot: {e}")
+        print(f"❌ Error crítico: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
