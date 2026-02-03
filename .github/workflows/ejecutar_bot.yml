@@ -1,8 +1,8 @@
-name: Ejecucion Automatica del Bot con Video
+name: Bot de Scripts para InVideo
 on:
-  workflow_dispatch: # Botón manual para pruebas
+  workflow_dispatch:
   schedule:
-    - cron: '0 8 * * *' # Se ejecuta a las 8:00 AM UTC
+    - cron: '0 8 * * *'
 
 jobs:
   build:
@@ -16,26 +16,11 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Instalar Dependencias del Sistema
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg imagemagick
-          # ESTA LÍNEA REPARA EL ERROR DE PERMISOS DE IMAGEMAGICK EN GITHUB ACTIONS
-          sudo sed -i 's/domain="path" rights="none" pattern="@\*"/domain="path" rights="read|write" pattern="@\*"/g' /etc/ImageMagick-6/policy.xml
-
-      - name: Instalar Librerias de Python
-        run: |
-          pip install requests gspread google-auth moviepy==1.0.3 gTTS
+      - name: Instalar Librerias
+        run: pip install requests gspread google-auth
 
       - name: Ejecutar el Bot
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python bot.py
-
-      - name: Guardar Video Generado
-        uses: actions/upload-artifact@v4
-        with:
-          name: video-resultado
-          path: "*.mp4"
-          retention-days: 3
