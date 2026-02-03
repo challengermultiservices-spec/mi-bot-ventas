@@ -12,8 +12,8 @@ def ejecutar_sistema_infinito():
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
     
     # --- CONFIGURACIÓN PERSONAL ---
-    ID_HOJA = "TU_ID_AQUÍ"  # Reemplaza con tu ID de Google Sheets
-    TAG_ID = "tu_tag-20"    # Reemplaza con tu Tag de Amazon
+    ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"  # Reemplaza con tu ID de Google Sheets
+    TAG_ID = "chmbrand-20"    # Reemplaza con tu Tag de Amazon
     # ------------------------------
 
     if not creds_raw:
