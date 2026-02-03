@@ -1,0 +1,25 @@
+name: Ejecucion del Bot de Ventas
+on:
+  workflow_dispatch: # Esto permite que lo prendas manualmente
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar codigo del repo
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar herramientas necesarias
+        run: |
+          pip install playwright google-generativeai
+          playwright install chromium
+
+      - name: Ejecutar el Bot de Analisis
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python bot.py
