@@ -1,34 +1,22 @@
-name: Bot de Ventas Automático chmbrand-20
+name: Bot de Ventas PRO
 
 on:
-  # Se ejecuta automáticamente dos veces al día (9:00 AM y 9:00 PM UTC)
   schedule:
-    - cron: '0 9,21 * * *'
-  
-  # Permite ejecución manual desde la pestaña "Actions"
+    # Se ejecuta 4 veces al día (Cada 6 horas)
+    - cron: '0 0,6,12,18 * * *'
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 1. Descargar el repositorio
-        uses: actions/checkout@v4
-
-      - name: 2. Configurar el entorno de Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-
-      - name: 3. Instalar dependencias necesarias
-        run: |
-          python -m pip install --upgrade pip
-          pip install requests gspread google-auth
-
-      - name: 4. Ejecutar el script bot.py
+      - run: pip install requests gspread google-auth
+      - name: Ejecutar bot.py
         env:
-          # Estas variables deben estar en Settings > Secrets and variables > Actions
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
