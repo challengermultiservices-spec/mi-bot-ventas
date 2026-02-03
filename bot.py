@@ -11,45 +11,33 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = ["Hogar", "Gadgets Tech", "Cocina", "Mascotas"]
+    categorias = ["Hogar Inteligente", "Gadgets Tech", "Cocina", "Mascotas"]
     cat = random.choice(categorias)
 
     try:
-        # 1. Conexión a Sheets con Reintentos (Protección 503)
+        # 1. Conexión a Sheets
         print(f"--- Conectando a Google Sheets ---")
         creds_info = json.loads(creds_raw)
         creds = Credentials.from_service_account_info(creds_info, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
-        
         client = gspread.authorize(creds)
-        
-        sheet = None
-        for intento in range(3):
-            try:
-                sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
-                print("✅ Conexión con Sheets exitosa.")
-                break
-            except APIError as e:
-                if e.response.status_code == 503:
-                    print(f"⚠️ Servidor de Google ocupado (503). Reintentando en 10s... ({intento+1}/3)")
-                    time.sleep(10)
-                else: raise e
+        sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
+        print("✅ Conexión con Sheets exitosa.")
 
-        if not sheet:
-            print("❌ No se pudo conectar a Sheets tras varios intentos."); sys.exit(1)
-
-        # 2. Gemini con Rotación
+        # 2. Gemini con Limpieza de Respuesta
         print(f"--- Solicitando producto de {cat} ---")
         modelos_y_versiones = [
-            ("v1beta", "gemini-1.5-pro"),
             ("v1beta", "gemini-2.0-flash"),
+            ("v1beta", "gemini-1.5-pro"),
             ("v1", "gemini-1.5-flash")
         ]
 
         res_g = None
         for version, modelo in modelos_y_versiones:
             url = f"https://generativelanguage.googleapis.com/{version}/models/{modelo}:generateContent?key={gemini_key}"
-            payload = {"contents": [{"parts": [{"text": f"Producto viral Amazon {cat}. Responde únicamente: NOMBRE | BUSQUEDA | HOOK | SCRIPT"}]}]}
+            # Prompt reforzado para evitar texto extra
+            prompt = f"Producto viral Amazon {cat}. Responde UNICAMENTE con este formato, sin introducciones: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
             
             r = requests.post(url, json=payload)
             res_json = r.json()
@@ -61,21 +49,38 @@ def ejecutar_sistema_automatico():
         if not res_g:
             print("❌ Ningún modelo Gemini respondió."); sys.exit(1)
 
-        t = res_g['candidates'][0]['content']['parts'][0]['text'].replace('```', '').strip()
-        d = [x.strip() for x in t.split('|')]
-        link = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){d[1].replace(' ', '+')}&tag={AMAZON_TAG}"
+        # LIMPIEZA CRITICA: Quitamos Markdown y saltos de línea extra
+        texto_sucio = res_g['candidates'][0]['content']['parts'][0]['text']
+        texto_limpio = texto_sucio.replace('```', '').replace('markdown', '').strip()
+        
+        # Dividimos y verificamos
+        d = [x.strip() for x in texto_limpio.split('|')]
+        
+        if len(d) < 4:
+            print(f"⚠️ Formato incorrecto, intentando reparar...")
+            # Si el separador falló, intentamos por líneas si es necesario
+            if "\n" in texto_limpio and len(d) < 4:
+                d = [x.strip() for x in texto_limpio.split('\n') if x.strip()][:4]
+
+        if len(d) < 4:
+            print(f"❌ Imposible procesar respuesta: {texto_limpio}")
+            sys.exit(1)
+
+        producto, busqueda, hook, cuerpo = d[0], d[1], d[2], d[3]
+        link_afiliado = f"[https://www.amazon.com/s?k=](https://www.amazon.com/s?k=){busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
         
         # 3. Creatomate
-        print(f"--- Renderizando Video: {d[0]} ---")
+        print(f"--- Renderizando Video: {producto} ---")
         res_v = requests.post("[https://api.creatomate.com/v2/renders](https://api.creatomate.com/v2/renders)", 
             headers={"Authorization": f"Bearer {creatomate_key}"}, 
-            json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": d[2].upper(), "Text-2.text": d[3]}})
+            json={"template_id": TEMPLATE_ID, "modifications": {"Text-1.text": hook.upper(), "Text-2.text": cuerpo}})
         
-        video_url = res_v.json()[0]['url']
+        render_data = res_v.json()
+        video_url = render_data[0]['url']
 
         # 4. Guardado final
-        sheet.append_row([d[0], link, video_url])
-        print(f"🚀 ¡LOGRADO! Producto guardado con éxito.")
+        sheet.append_row([producto, link_afiliado, video_url])
+        print(f"🚀 ¡LOGRADO! {producto} guardado en Google Sheets.")
 
     except Exception as e:
         print(f"❌ Error crítico: {e}")
