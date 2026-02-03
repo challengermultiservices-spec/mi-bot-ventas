@@ -1,22 +1,29 @@
 import google.generativeai as genai
 import os
 
-# Configuración ultra-directa
-api_key = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=api_key)
+# Configuramos la llave
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 def ejecutar():
-    print("Conectando con el cerebro de Google...")
+    print("Iniciando conexión forzada con el modelo estable...")
     try:
-        # Probamos el modelo pro que es el más estable
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        response = model.generate_content("Dime 2 productos virales para TikTok Shop y un hook.")
+        # Usamos la ruta completa del sistema para que no haya pérdida
+        # 'models/gemini-1.0-pro' es el modelo más compatible que existe
+        model = genai.GenerativeModel('models/gemini-1.0-pro')
         
-        print("\n--- ¡EXITO! ---")
+        prompt = "Eres un experto en ventas. Dime 2 productos de cocina virales para TikTok Shop y un hook corto."
+        
+        response = model.generate_content(prompt)
+        
+        print("\n" + "🌟" * 10)
+        print("RESULTADO DEL ANÁLISIS:")
         print(response.text)
-        print("---------------")
+        print("🌟" * 10)
+        
     except Exception as e:
-        print(f"Error fatal: {e}")
+        print(f"Error detectado: {e}")
+        print("\n--- POSIBLE SOLUCIÓN ---")
+        print("Si el error persiste, es probable que la API KEY necesite ser revisada en Google AI Studio.")
 
 if __name__ == "__main__":
     ejecutar()
