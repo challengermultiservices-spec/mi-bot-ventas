@@ -1,14 +1,7 @@
-import os
-import requests
-import json
-import gspread
-import time
-import random
+import os, requests, json, gspread, time, random, sys
 from google.oauth2.service_account import Credentials
-import sys
 
 def ejecutar_sistema_automatico():
-    # 1. Configuración de credenciales
     gemini_key = os.environ.get("GEMINI_API_KEY")
     creatomate_key = os.environ.get("CREATOMATE_API_KEY")
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS")
@@ -17,68 +10,63 @@ def ejecutar_sistema_automatico():
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
-    categorias = [
-        "Gadgets de Cocina", "Tecnología para el hogar", "Accesorios para Mascotas", 
-        "Fitness", "Herramientas", "Belleza"
-    ]
-    categoria_elegida = random.choice(categorias)
-
-    # Modelos para rotar en caso de error de cuota
-    modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
+    # Ahora que eres PRO, podemos usar categorías más competitivas
+    categorias = ["Hogar Inteligente", "Gadgets Tech", "Mascotas", "Cocina Profesional"]
+    cat = random.choice(categorias)
+    
+    # Prioridad ahora es el modelo 1.5-PRO
+    modelos = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-2.0-flash"]
 
     try:
-        print("--- Conectando a Google Sheets ---")
-        creds_json = json.loads(creds_raw)
-        creds = Credentials.from_service_account_info(creds_json, scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
-        client = gspread.authorize(creds)
-        sheet = client.open_by_key(ID_HOJA).get_worksheet(0)
+        print(f"--- Iniciando proceso PRO para categoría: {cat} ---")
+        creds = Credentials.from_service_account_info(json.loads(creds_raw), scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
+        sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
 
         res_g = None
-        for modelo in modelos_a_probar:
-            print(f"--- Intentando con {modelo} ---")
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={gemini_key}"
-            prompt = f"Sugiere un producto viral de Amazon de {categoria_elegida}. Responde estrictamente: NOMBRE | BUSQUEDA | HOOK | SCRIPT"
+        for m in modelos:
+            print(f"--- Solicitando a {m} ---")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={gemini_key}"
+            # Prompt más profesional para mejores resultados
+            p = {"contents": [{"parts": [{"text": f"Eres un experto en ventas de Amazon. Sugiere un producto viral de {cat}. Responde solo en este formato: NOMBRE | TERMINO DE BUSQUEDA | HOOK IMPACTANTE | SCRIPT CORTO PARA VIDEO"}]}]}
             
-            try:
-                response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
-                temp_res = response.json()
-                if 'candidates' in temp_res:
-                    res_g = temp_res
-                    break
-            except:
-                continue
+            r = requests.post(url, json=p)
+            if r.status_code == 200:
+                res_g = r.json()
+                print(f"✅ Respuesta recibida de {m}")
+                break
+            else:
+                print(f"⚠️ {m} no disponible, probando siguiente...")
 
         if not res_g:
-            print("❌ Cuota agotada en todos los modelos.")
+            print("❌ Error: No se pudo conectar con la API de Gemini.")
             sys.exit(1)
 
-        # 2. Procesar respuesta
-        texto = res_g['candidates'][0]['content']['parts'][0]['text']
-        datos = [d.strip() for d in texto.split('|')]
-        producto, busqueda, hook, cuerpo = datos[0], datos[1], datos[2], datos[3]
-        link_afiliado = f"https://www.amazon.com/s?k={busqueda.replace(' ', '+')}&tag={AMAZON_TAG}"
+        t = res_g['candidates'][0]['content']['parts'][0]['text']
+        d = [x.strip() for x in t.split('|')]
+        
+        # Crear link de afiliado
+        link = f"https://www.amazon.com/s?k={d[1].replace(' ', '+')}&tag={AMAZON_TAG}"
 
-        # 3. Creatomate
-        print(f"--- Generando Video para: {producto} ---")
-        headers = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
-        payload = {
-            "template_id": TEMPLATE_ID,
-            "modifications": {
-                "Text-1.text": hook.upper(),
-                "Text-2.text": cuerpo
-            }
-        }
-        res_c = requests.post("https://api.creatomate.com/v2/renders", headers=headers, json=payload)
+        # Generar Video en Creatomate
+        print(f"--- Enviando a Creatomate: {d[0]} ---")
+        res_c = requests.post("https://api.creatomate.com/v2/renders", 
+            headers={"Authorization": f"Bearer {creatomate_key}"}, 
+            json={
+                "template_id": TEMPLATE_ID, 
+                "modifications": {
+                    "Text-1.text": d[2].upper(), 
+                    "Text-2.text": d[3]
+                }
+            })
+        
         video_url = res_c.json()[0]['url']
 
-        # 4. Guardar en Sheets (Solo Columnas A, B, C)
-        fila = [producto, link_afiliado, video_url]
-        sheet.append_row(fila)
-        
-        print(f"✅ ÉXITO: {producto} guardado.")
+        # Guardar en Sheets (A: Producto, B: Link, C: Video)
+        sheet.append_row([d[0], link, video_url])
+        print(f"🚀 ¡TODO LISTO! Producto: {d[0]}")
 
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"❌ Error crítico: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
