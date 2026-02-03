@@ -1,38 +1,22 @@
-import asyncio
 import google.generativeai as genai
 import os
 
-# Configuración directa
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+# Configuración ultra-directa
+api_key = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=api_key)
 
-async def obtener_tendencias():
-    print("Iniciando análisis con Modelo Pro...")
-    
-    # Probamos con 'gemini-pro', que es la versión de producción más estable
+def ejecutar():
+    print("Conectando con el cerebro de Google...")
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # Probamos el modelo pro que es el más estable
+        model = genai.GenerativeModel('gemini-1.5-pro')
+        response = model.generate_content("Dime 2 productos virales para TikTok Shop y un hook.")
         
-        prompt = """
-        Eres experto en TikTok Shop USA y Dropshipping. 
-        Hoy es 2 de febrero de 2026. 
-        Dime 3 productos de cocina que son tendencia viral en este momento.
-        Dame: Nombre, Hook de video y por qué se vende.
-        """
-        
-        response = model.generate_content(prompt)
-        
-        print("\n" + "✅" * 10)
-        print("RESULTADO FINAL:")
+        print("\n--- ¡EXITO! ---")
         print(response.text)
-        print("✅" * 10)
-
+        print("---------------")
     except Exception as e:
-        print(f"Error con Pro: {e}")
-        # Último recurso: intentar con la versión específica 1.0
-        print("Intentando último recurso...")
-        model_fallback = genai.GenerativeModel('models/gemini-1.0-pro')
-        response = model_fallback.generate_content("Dime 2 productos virales de cocina.")
-        print(response.text)
+        print(f"Error fatal: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(obtener_tendencias())
+    ejecutar()
