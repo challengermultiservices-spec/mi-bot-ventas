@@ -1,6 +1,10 @@
-name: Ejecucion del Bot de Ventas
+name: Ejecucion Automatica del Bot
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Permite que lo sigas ejecutando a mano si quieres
+  schedule:
+    # Este es el "reloj". El formato es: Minuto Hora Dia Mes Dia_de_la_semana
+    # 0 8 * * * significa: Todos los días a las 08:00 AM UTC
+    - cron: '0 8 * * *'
 
 jobs:
   build:
@@ -14,10 +18,10 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Instalar Requests
+      - name: Instalar Dependencias
         run: pip install requests
 
-      - name: Ejecutar el Bot
+      - name: Ejecutar el Bot de Analisis
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
