@@ -1,26 +1,29 @@
-name: Bot de Scripts para InVideo
+name: Bot de Video Automatico chmbrand-20
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Permite ejecutarlo manualmente desde GitHub
   schedule:
-    - cron: '0 8 * * *'
+    - cron: '0 8 * * *' # Se ejecuta solo todos los días a las 8:00 AM
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar codigo
+      - name: 1. Descargar codigo del repositorio
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: 2. Configurar entorno Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar Librerias
-        run: pip install requests gspread google-auth
+      - name: 3. Instalar librerias necesarias
+        run: |
+          pip install requests gspread google-auth
 
-      - name: Ejecutar el Bot
+      - name: 4. Ejecutar el Bot Automatizado
         env:
+          # Estas variables deben estar en Settings > Secrets and variables > Actions
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CREATOMATE_API_KEY: ${{ secrets.CREATOMATE_API_KEY }}
           GOOGLE_SHEETS_CREDENTIALS: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
         run: python bot.py
