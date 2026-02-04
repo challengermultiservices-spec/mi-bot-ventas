@@ -11,7 +11,6 @@ def enviar_telegram(mensaje):
     except: pass
 
 def ejecutar_bot():
-    # Variables de entorno
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     creatomate_key = os.environ.get("CREATOMATE_API_KEY", "").strip()
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "").strip()
@@ -20,7 +19,7 @@ def ejecutar_bot():
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
     AMAZON_TAG = "chmbrand-20"
 
-    print("🚀 Iniciando Bot con Bypass...")
+    print("🚀 Iniciando Bot Final...")
 
     try:
         # 1. Google Sheets
@@ -34,47 +33,39 @@ def ejecutar_bot():
         prompt = "Suggest 1 Amazon gadget. Return ONLY JSON: {\"prod\": \"Name\", \"hook\": \"Hook\", \"body\": \"Body\"}"
         r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         datos = json.loads(re.search(r'\{.*\}', r_g.text, re.DOTALL).group(0))
-        prod_nombre = datos.get('prod', 'Gadget')
+        prod_nombre = datos.get('prod', 'Gadget Viral')
 
-        # 3. Creatomate (Estrategia de conexión simple)
+        # 3. Creatomate
         print("🚀 Enviando a Creatomate...")
-        # Usamos una conexión directa sin sesión compleja para evitar firmas de bot
         h_c = {
             "Authorization": f"Bearer {creatomate_key}",
-            "Content-Type": "application/json",
-            "Accept": "*/*"
+            "Content-Type": "application/json"
         }
         payload = {
             "template_id": TEMPLATE_ID,
             "modifications": {
-                "Text-1.text": datos.get('hook', 'AMAZON FIND').upper(),
+                "Text-1.text": datos.get('hook', 'OFERTA').upper(),
                 "Text-2.text": datos.get('body', '')
             }
         }
 
-        # Cambiamos el timeout y forzamos el cierre de conexión para limpiar el túnel
-        res_c = requests.post(
-            "https://api.creatomate.com/v2/renders", 
-            headers=h_c, 
-            json=payload, 
-            timeout=60,
-            stream=False # Forzar descarga completa
-        )
+        res_c = requests.post("https://api.creatomate.com/v2/renders", headers=h_c, json=payload, timeout=60)
         
-        if res_c.status_code != 200:
+        # Aceptamos 200 (Listo) y 202 (Procesando)
+        if res_c.status_code not in [200, 201, 202]:
             raise Exception(f"API Error {res_c.status_code}")
         
         render_data = res_c.json()
-        render_id = render_data[0]['id']
         video_url = render_data[0]['url']
+        print(f"✅ Orden aceptada (Código {res_c.status_code})")
 
-        # 4. Registro y Notificación (Sin esperar al renderizado completo para evitar timeouts)
+        # 4. Registro y Notificación
         l_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
         sheet.append_row([prod_nombre, l_amz, video_url])
         
-        msg = f"🎬 *¡Video en Proceso!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Enlace del Video]({video_url})\n🛒 [Link Amazon]({l_amz})\n\n_Nota: Espera 2 min para que el video cargue._"
+        msg = f"🎬 *¡Video Creado con Éxito!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Enlace del Video]({video_url})\n🛒 [Link Amazon]({l_amz})\n\n_Nota: El video puede tardar 1-2 min en procesarse._"
         enviar_telegram(msg)
-        print("🏁 PROCESO COMPLETADO")
+        print("🏁 PROCESO COMPLETADO CON ÉXITO")
 
     except Exception as e:
         error_msg = f"❌ *Error en el Bot:* {str(e)}"
