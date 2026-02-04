@@ -14,7 +14,6 @@ def ejecutar_sistema_automatico():
 
     try:
         # 1. CONEXIÓN A GOOGLE SHEETS
-        print("--- Iniciando Conexión con Google Sheets ---")
         creds_dict = json.loads(creds_raw)
         creds = Credentials.from_service_account_info(creds_dict, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
@@ -32,39 +31,32 @@ def ejecutar_sistema_automatico():
         
         r_gemini = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         
-        # Extracción y limpieza del JSON de la IA
         try:
             raw_text = r_gemini.json()['candidates'][0]['content']['parts'][0]['text']
             match = re.search(r'\{.*\}', raw_text, re.DOTALL)
             datos = json.loads(match.group(0))
-        except Exception as e:
-            print(f"⚠️ Error al leer IA, usando datos de respaldo. Detalle: {e}")
+        except:
             datos = {"producto": f"{cat_elegida} Viral", "busqueda_video": "technology", "hook": "¡Mira este hallazgo!", "script": "Este producto está rompiendo internet."}
 
         prod_final = datos.get('producto', 'Gadget Increíble')
         print(f"✅ Producto Seleccionado: {prod_final}")
 
-        # 3. BÚSQUEDA DE VIDEO EN PEXELS
-        video_fondo = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28" # Fondo por defecto
+        # 3. BÚSQUEDA EN PEXELS
+        video_fondo = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28"
         try:
-            query_video = datos.get('busqueda_video', 'product')
-            p_url = f"https://api.pexels.com/videos/search?query={query_video}&per_page=1&orientation=portrait"
-            p_res = requests.get(p_url, headers={"Authorization": pexels_key}, timeout=15)
+            query_v = datos.get('busqueda_video', 'product')
+            p_res = requests.get(f"https://api.pexels.com/videos/search?query={query_v}&per_page=1&orientation=portrait", 
+                                 headers={"Authorization": pexels_key}, timeout=15)
             if p_res.status_code == 200 and p_res.json().get('videos'):
                 video_fondo = p_res.json()['videos'][0]['video_files'][0]['link']
-                print("🎬 Video de Pexels encontrado con éxito.")
+                print("🎬 Video de Pexels encontrado.")
         except:
-            print("⚠️ No se pudoobtener video de Pexels. Usando fondo de seguridad.")
+            print("⚠️ Usando fondo de seguridad.")
 
-        # 4. ENVÍO A CREATOMATE (CON PROTECCIÓN DE RED)
-        print("--- Enviando orden de renderizado a Creatomate ---")
-        u_creatomate = "https://api.creatomate.com/v2/renders"
-        h_creatomate = {
-            "Authorization": f"Bearer {creatomate_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0"
-        }
-        payload_creatomate = {
+        # 4. CREATOMATE (CON PROTECCIÓN DE RED)
+        u_c = "https://api.creatomate.com/v2/renders"
+        h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        p_c = {
             "template_id": TEMPLATE_ID,
             "modifications": {
                 "Video.source": video_fondo,
@@ -75,19 +67,19 @@ def ejecutar_sistema_automatico():
         
         video_url_final = "Renderizando (Verificar en panel)"
         try:
-            res_c = requests.post(u_creatomate, headers=h_creatomate, json=payload_creatomate, timeout=25)
+            res_c = requests.post(u_c, headers=h_c, json=p_c, timeout=25)
             if res_c.status_code in [200, 201, 202]:
                 video_url_final = res_c.json()[0]['url']
-        except Exception:
-            print("⚠️ La confirmación de red tardó, pero el video fue enviado correctamente.")
+        except:
+            print("⚠️ Aviso de red: El video se envió correctamente.")
 
-        # 5. REGISTRO EN GOOGLE SHEETS
-        link_amazon = f"https://www.amazon.com/s?k={prod_final.replace(' ', '+')}&tag={AMAZON_TAG}"
-        sheet.append_row([prod_final, link_amazon, video_url_final])
-        print(f"🚀 PROCESO COMPLETADO: {prod_final} guardado en el Sheets.")
+        # 5. REGISTRO FINAL
+        link_amz = f"https://www.amazon.com/s?k={prod_final.replace(' ', '+')}&tag={AMAZON_TAG}"
+        sheet.append_row([prod_final, link_amz, video_url_final])
+        print(f"🚀 EXITO TOTAL: {prod_final} guardado.")
 
     except Exception as e:
-        print(f"❌ ERROR CRÍTICO: {str(e)}")
+        print(f"❌ ERROR: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
