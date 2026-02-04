@@ -7,42 +7,53 @@ def enviar_telegram(mensaje):
     if not token or not chat_id: return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "Markdown"}
-    try: requests.post(url, json=payload, timeout=10)
-    except: print("⚠️ Error en Telegram")
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except:
+        pass
 
-def ejecutar_bot_maestro():
+def ejecutar_bot():
+    # 1. Carga de Variables
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     creatomate_key = os.environ.get("CREATOMATE_API_KEY", "").strip()
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "").strip()
     
+    # IDs de tus herramientas
     ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
-    AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
+    AMAZON_TAG = "chmbrand-20"
+
+    print("🚀 Iniciando Bot...")
 
     try:
-        # 1. Sheets
-        creds = Credentials.from_service_account_info(json.loads(creds_raw), 
+        # 2. Conexión Google Sheets
+        creds_dict = json.loads(creds_raw)
+        creds = Credentials.from_service_account_info(creds_dict, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Sheets Conectado")
 
-        # 2. Gemini
+        # 3. Gemini: Generar Producto
         url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-        prompt = "Suggest a viral Amazon gadget. Return ONLY JSON: {\"prod\": \"Name\", \"query\": \"English\", \"hook\": \"Hook\", \"body\": \"Text\"}"
+        prompt = "Suggest 1 viral Amazon gadget. Return ONLY JSON: {\"prod\": \"Name\", \"query\": \"English Search\", \"hook\": \"Short Hook\", \"body\": \"Short Body\"}"
         r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         datos = json.loads(re.search(r'\{.*\}', r_g.text, re.DOTALL).group(0))
-        prod_nombre = datos.get('prod', 'Gadget')
+        prod_nombre = datos.get('prod', 'Gadget Viral')
+        print(f"✅ Producto: {prod_nombre}")
 
-        # 3. Pexels
+        # 4. Pexels: Fondo de Video
         video_f = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28"
         try:
-            p_res = requests.get(f"https://api.pexels.com/videos/search?query={datos['query']}&per_page=1&orientation=portrait", 
-                                 headers={"Authorization": pexels_key}, timeout=20)
-            if p_res.status_code == 200: video_f = p_res.json()['videos'][0]['video_files'][0]['link']
-        except: print("⚠️ Usando fondo por defecto")
+            h_p = {"Authorization": pexels_key}
+            p_res = requests.get(f"https://api.pexels.com/videos/search?query={datos['query']}&per_page=1&orientation=portrait", headers=h_p, timeout=20)
+            if p_res.status_code == 200:
+                video_f = p_res.json()['videos'][0]['video_files'][0]['link']
+                print("🎬 Fondo de Pexels obtenido")
+        except:
+            print("⚠️ Usando fondo por defecto")
 
-        # 4. Creatomate (Con manejo de errores mejorado)
+        # 5. Creatomate: Renderizado
         print("🚀 Enviando a Creatomate...")
         u_c = "https://api.creatomate.com/v2/renders"
         h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
@@ -54,35 +65,32 @@ def ejecutar_bot_maestro():
                 "Text-2.text": datos.get('body', '')
             }
         }
-        
-        res_c = requests.post(u_c, headers=h_c, json=payload, timeout=40)
-        
-        if res_c.status_code not in [200, 201, 202]:
-            raise Exception(f"Creatomate Error {res_c.status_code}: {res_c.text}")
+        res_c = requests.post(u_c, headers=h_c, json=payload, timeout=45).json()
+        render_id = res_c[0]['id']
+        video_url = res_c[0]['url']
 
-        render_data = res_c.json()
-        render_id = render_data[0]['id']
-        video_url = render_data[0]['url']
-
-        # 5. Espera Activa
-        print(f"⏳ Procesando video...")
-        for _ in range(15):
+        # 6. Espera Activa (Máximo 3 mins)
+        print("⏳ Procesando video...")
+        for _ in range(12):
             time.sleep(15)
             check = requests.get(f"https://api.creatomate.com/v2/renders/{render_id}", headers=h_c).json()
             if check.get('status') == 'succeeded':
-                print("✅ Video terminado.")
+                print("✅ Video terminado")
                 break
 
-        # 6. Registro y Telegram
+        # 7. Registro y Notificación
         l_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
         sheet.append_row([prod_nombre, l_amz, video_url])
         
-        msg = f"🎬 *¡Video Listo!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Ver Video]({video_url})\n🔗 [Link Amazon]({l_amz})"
+        msg = f"🎬 *¡Video Listo!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Ver Video]({video_url})\n🛒 [Link Amazon]({l_amz})"
         enviar_telegram(msg)
-        print("🚀 PROCESO COMPLETADO")
+        print("🏁 PROCESO COMPLETADO")
 
     except Exception as e:
-        error_msg = f"❌ *Error en el Bot:* {str(e)[:200]}"
-        enviar_telegram(error_msg)
-        print(f"❌ Error: {e}")
+        error_info = f"❌ *Error en el Bot:* {str(e)}"
+        enviar_telegram(error_info)
+        print(error_info)
         sys.exit(1)
+
+if __name__ == "__main__":
+    ejecutar_bot()
