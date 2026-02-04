@@ -11,7 +11,7 @@ def enviar_email(producto, link_video):
         "personalizations": [{"to": [{"email": receptor}]}],
         "from": {"email": receptor}, 
         "subject": f"🎬 Video de Amazon Listo: {producto}",
-        "content": [{"type": "text/plain", "value": f"¡Hola!\n\nEl video para '{producto}' ya está procesado al 100%.\n\nVer Video: {link_video}\n\nYa puedes descargarlo."}]
+        "content": [{"type": "text/plain", "value": f"¡Hola!\n\nEl video para '{producto}' ya está listo.\n\nVer Video: {link_video}"}]
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     try:
@@ -42,18 +42,19 @@ def ejecutar_bot_maestro():
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "").strip()
     
-ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
+    ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
     AMAZON_TAG = "chmbrand-20" 
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
     try:
         # 1. Conexión Sheets
-        creds = Credentials.from_service_account_info(json.loads(creds_raw), 
+        creds_dict = json.loads(creds_raw)
+        creds = Credentials.from_service_account_info(creds_dict, 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Sheets Conectado")
 
-        # 2. Gemini: Producto Viral (con limpieza de JSON)
+        # 2. Gemini
         url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
         cat = random.choice(["Gadgets", "Cocina", "Hogar", "Mascotas"])
         prompt = f"Product Amazon {cat}. Return ONLY JSON: {{\"prod\": \"...\", \"query\": \"...\", \"hook\": \"...\", \"body\": \"...\"}}"
@@ -63,7 +64,7 @@ ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
         prod_nombre = datos.get('prod', 'Nuevo Gadget')
         print(f"✅ Producto: {prod_nombre}")
 
-        # 3. Pexels: Fondo de Video
+        # 3. Pexels
         video_f = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28"
         try:
             p_res = requests.get(f"https://api.pexels.com/videos/search?query={datos['query']}&per_page=1&orientation=portrait", 
@@ -73,7 +74,7 @@ ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
                 print("🎬 Fondo de Pexels listo.")
         except: print("⚠️ Usando fondo por defecto.")
 
-        # 4. Creatomate: Render con Espera Activa (Anti-404)
+       # 4. Creatomate
         u_c = "https://api.creatomate.com/v2/renders"
         h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         payload = {
@@ -90,8 +91,8 @@ ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
         render_id = res_c[0]['id']
         video_url = res_c[0]['url']
 
-        # Bucle de verificación de estado (Máximo 4 minutos)
-        print(f"⏳ Procesando video (ID: {render_id})...")
+        # Bucle de espera
+        print(f"⏳ Procesando video...")
         for _ in range(16):
             time.sleep(15)
             check = requests.get(f"https://api.creatomate.com/v2/renders/{render_id}", headers=h_c, timeout=20).json()
