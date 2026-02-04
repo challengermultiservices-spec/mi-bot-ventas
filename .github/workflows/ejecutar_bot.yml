@@ -3,7 +3,7 @@ name: Bot Amazon con Notificaciones Reales
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */4 * * *' # Cada 4 horas
 
 jobs:
   run-bot:
