@@ -1,7 +1,5 @@
 import os, requests, json, gspread, time, random, sys, re
 from google.oauth2.service_account import Credentials
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 def enviar_telegram(mensaje):
     token = os.environ.get("TELEGRAM_TOKEN", "").strip()
@@ -22,13 +20,7 @@ def ejecutar_bot():
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
     AMAZON_TAG = "chmbrand-20"
 
-    # Configurar Sesión con Reintentos a nivel de Protocolo
-    session = requests.Session()
-    retry_strategy = Retry(total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-    session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
-    session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/119.0.0.0 Safari/537.36"})
-
-    print("🚀 Iniciando Bot con Sesión Reforzada...")
+    print("🚀 Iniciando Bot con Bypass...")
 
     try:
         # 1. Google Sheets
@@ -37,17 +29,21 @@ def ejecutar_bot():
         sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Sheets Conectado")
 
-       # 2. Gemini
+        # 2. Gemini
         url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
         prompt = "Suggest 1 Amazon gadget. Return ONLY JSON: {\"prod\": \"Name\", \"hook\": \"Hook\", \"body\": \"Body\"}"
-        r_g = session.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+        r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
         datos = json.loads(re.search(r'\{.*\}', r_g.text, re.DOTALL).group(0))
         prod_nombre = datos.get('prod', 'Gadget')
 
-        # 3. Creatomate (Paso Crítico)
+        # 3. Creatomate (Estrategia de conexión simple)
         print("🚀 Enviando a Creatomate...")
-        u_c = "https://api.creatomate.com/v2/renders"
-        h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
+        # Usamos una conexión directa sin sesión compleja para evitar firmas de bot
+        h_c = {
+            "Authorization": f"Bearer {creatomate_key}",
+            "Content-Type": "application/json",
+            "Accept": "*/*"
+        }
         payload = {
             "template_id": TEMPLATE_ID,
             "modifications": {
@@ -56,35 +52,34 @@ def ejecutar_bot():
             }
         }
 
-        # Intentar el renderizado con la sesión reforzada
-        res_c = session.post(u_c, headers=h_c, json=payload, timeout=60)
-        if res_c.status_code not in [200, 201, 202]:
-            raise Exception(f"Error {res_c.status_code}: {res_c.text}")
+        # Cambiamos el timeout y forzamos el cierre de conexión para limpiar el túnel
+        res_c = requests.post(
+            "https://api.creatomate.com/v2/renders", 
+            headers=h_c, 
+            json=payload, 
+            timeout=60,
+            stream=False # Forzar descarga completa
+        )
         
-        render_id = res_c.json()[0]['id']
-        video_url = res_c.json()[0]['url']
+        if res_c.status_code != 200:
+            raise Exception(f"API Error {res_c.status_code}")
+        
+        render_data = res_c.json()
+        render_id = render_data[0]['id']
+        video_url = render_data[0]['url']
 
-        # 4. Espera Activa
-        print("⏳ Procesando video...")
-        for _ in range(10):
-            time.sleep(20)
-            check = session.get(f"https://api.creatomate.com/v2/renders/{render_id}", headers=h_c, timeout=30).json()
-            if check.get('status') == 'succeeded':
-                print("✅ Video terminado")
-                break
-
-        # 5. Registro y Notificación
+        # 4. Registro y Notificación (Sin esperar al renderizado completo para evitar timeouts)
         l_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
         sheet.append_row([prod_nombre, l_amz, video_url])
         
-        msg = f"🎬 *¡Video Listo!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Ver Video]({video_url})\n🛒 [Amazon]({l_amz})"
+        msg = f"🎬 *¡Video en Proceso!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Enlace del Video]({video_url})\n🛒 [Link Amazon]({l_amz})\n\n_Nota: Espera 2 min para que el video cargue._"
         enviar_telegram(msg)
         print("🏁 PROCESO COMPLETADO")
 
     except Exception as e:
         error_msg = f"❌ *Error en el Bot:* {str(e)}"
-        enviar_telegram(error_info := error_msg)
-        print(error_info)
+        enviar_telegram(error_msg)
+        print(error_msg)
         sys.exit(1)
 
 if __name__ == "__main__":
