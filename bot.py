@@ -10,9 +10,9 @@ def enviar_email(producto, link_video):
     url = "https://api.sendgrid.com/v3/mail/send"
     data = {
         "personalizations": [{"to": [{"email": receptor}]}],
-        "from": {"email": receptor}, # Usamos tu propio correo verificado como remitente
-        "subject": f"🚀 Video de Amazon Listo: {producto}",
-        "content": [{"type": "text/plain", "value": f"Hola!\n\nEl bot ha generado un nuevo video.\nProducto: {producto}\nVer Video: {link_video}\n\nYa puedes descargarlo y subirlo."}]
+        "from": {"email": receptor}, 
+        "subject": f"🎬 Video de Amazon Listo: {producto}",
+        "content": [{"type": "text/plain", "value": f"¡Hola!\n\nEl video para '{producto}' ya está procesado al 100%.\n\nVer Video: {link_video}\n\nYa puedes descargarlo y subirlo a tus redes."}]
     }
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     try:
@@ -27,23 +27,18 @@ def enviar_sms(producto):
     token = os.environ.get("TWILIO_AUTH_TOKEN", "").strip()
     n_twilio = os.environ.get("TWILIO_PHONE", "").strip()
     mi_cel = os.environ.get("MI_CELULAR", "").strip()
-    
     if not all([sid, token, n_twilio, mi_cel]): return
 
     url = f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json"
-    payload = {
-        "To": mi_cel, 
-        "From": n_twilio, 
-        "Body": f"Bot Amazon: Video listo para {producto}. Revisa tu Sheets!"
-    }
+    payload = {"To": mi_cel, "From": n_twilio, "Body": f"Bot Amazon: ¡Video listo para {producto}! Revisa tu email o Sheets."}
     try:
         requests.post(url, data=payload, auth=(sid, token), timeout=10)
         print("📱 SMS enviado con éxito.")
     except:
         print("⚠️ No se pudo enviar el SMS.")
 
-def ejecutar_sistema_automatico():
-    # Carga de Variables
+def ejecutar_bot_maestro():
+    # Carga de Variables desde Secrets
     gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
     creatomate_key = os.environ.get("CREATOMATE_API_KEY", "").strip()
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
@@ -54,58 +49,70 @@ def ejecutar_sistema_automatico():
     TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
 
     try:
-        # 1. Google Sheets
-        creds_dict = json.loads(creds_raw)
-        creds = Credentials.from_service_account_info(creds_dict, 
+        # 1. Conexión Sheets
+        creds = Credentials.from_service_account_info(json.loads(creds_raw), 
             scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
         sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
         print("✅ Sheets Conectado")
 
-        # 2. Gemini
-        url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_key}"
-        cat = random.choice(["Gadgets Tecnológicos", "Cocina Pro", "Hogar Inteligente", "Mascotas"])
-        prompt = (f"Product Amazon {cat}. Return ONLY JSON object: "
-                  "{\"producto\": \"Nombre Real\", \"query_v\": \"2 words english\", \"hook\": \"...\", \"script\": \"...\"}")
+        # 2. Gemini: Generar Producto
+        url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
+        cat = random.choice(["Gadgets", "Cocina", "Hogar", "Mascotas"])
+        prompt = (f"Sugiere un producto viral de Amazon para {cat}. Responde SOLO JSON: "
+                  "{\"prod\": \"Nombre en Español\", \"query\": \"2 words English\", \"hook\": \"Gancho corto\", \"body\": \"Texto breve\"}")
         
-        r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
+        r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]})
         datos = json.loads(re.search(r'\{.*\}', r_g.text, re.DOTALL).group(0))
-        prod_nombre = datos.get('producto', 'Nuevo Gadget')
-        print(f"✅ Producto: {prod_nombre}")
+        prod_nombre = datos.get('prod', 'Nuevo Gadget')
 
-        # 3. Pexels
+        # 3. Pexels: Buscar Video
         video_f = "https://creatomate.com/files/assets/7347c3b7-e1a8-4439-96f1-f3dfc95c3d28"
         try:
-            p_res = requests.get(f"https://api.pexels.com/videos/search?query={datos['query_v']}&per_page=1&orientation=portrait", 
-                                 headers={"Authorization": pexels_key}, timeout=15)
+            headers_p = {"Authorization": pexels_key}
+            p_res = requests.get(f"https://api.pexels.com/videos/search?query={datos['query']}&per_page=1&orientation=portrait", headers=headers_p, timeout=15)
             if p_res.status_code == 200 and p_res.json().get('videos'):
                 video_f = p_res.json()['videos'][0]['video_files'][0]['link']
-                print("🎬 Fondo de Pexels listo.")
-        except: print("⚠️ Usando fondo predeterminado.")
+                print("🎬 Fondo de Pexels obtenido.")
+        except: print("⚠️ Usando fondo por defecto.")
 
-        # 4. Creatomate
+        # 4. Creatomate: Renderizado con Bucle de Espera (Anti-404)
         u_c = "https://api.creatomate.com/v2/renders"
-        h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+        h_c = {"Authorization": f"Bearer {creatomate_key}", "Content-Type": "application/json"}
         p_c = {
             "template_id": TEMPLATE_ID,
             "modifications": {
                 "Video.source": video_f,
-                "Text-1.text": datos.get('hook', 'AMAZON FIND').upper()[:60],
-                "Text-2.text": datos.get('script', '')[:250]
+                "Text-1.text": datos.get('hook', 'OFERTA').upper()[:60],
+                "Text-2.text": datos.get('body', '')[:250]
             }
         }
         
-        video_url = "Procesando..."
-        try:
-            res_c = requests.post(u_c, headers=h_c, json=p_c, timeout=25)
-            if res_c.status_code in [200, 201, 202]:
-                video_url = res_c.json()[0]['url']
-        except: print("⚠️ El render se completará en breve.")
+        print("🚀 Enviando orden a Creatomate...")
+        res_c = requests.post(u_c, headers=h_c, json=p_c).json()
+        render_id = res_c[0]['id']
+        video_url = res_c[0]['url']
 
-        # 5. Guardado y Alertas
-        link_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
-        sheet.append_row([prod_nombre, link_amz, video_url])
+        # Bucle de verificación de estado
+        print(f"⏳ Procesando video (ID: {render_id})...")
+        intentos = 0
+        while intentos < 20: # Máximo 3-4 minutos de espera
+            check = requests.get(f"https://api.creatomate.com/v2/renders/{render_id}", headers=h_c).json()
+            estado = check.get('status')
+            if estado == 'succeeded':
+                print("✅ Video terminado y listo para descargar.")
+                break
+            elif estado == 'failed':
+                print("❌ El renderizado falló en Creatomate.")
+                sys.exit(1)
+            time.sleep(15)
+            intentos += 1
+            print("... trabajando ...")
+
+        # 5. Guardado y Notificación
+        l_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
+        sheet.append_row([prod_nombre, l_amz, video_url])
         
-        print(f"🚀 EXITO TOTAL. Lanzando notificaciones...")
+        print(f"🚀 TODO LISTO. Notificando a {prod_nombre}...")
         enviar_email(prod_nombre, video_url)
         enviar_sms(prod_nombre)
 
@@ -114,4 +121,4 @@ def ejecutar_sistema_automatico():
         sys.exit(1)
 
 if __name__ == "__main__":
-    ejecutar_sistema_automatico()
+    ejecutar_bot_maestro()
