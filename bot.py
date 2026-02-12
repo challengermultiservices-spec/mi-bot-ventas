@@ -1,79 +1,143 @@
-import os, requests, json, gspread, time, random, sys, re
-from google.oauth2.service_account import Credentials
+import requests
+from bs4 import BeautifulSoup
+import os
+import json
+import time
+from fake_useragent import UserAgent
+
+# ==========================================
+# CONFIGURACIÓN
+# ==========================================
+
+# 1. TUS CREDENCIALES
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+AMAZON_TAG = "chmbrand-20"  # Tu código de afiliado
+
+# 2. CONEXIÓN CON MAKE (¡AQUÍ PEGAS TU WEBHOOK!)
+# Este link te lo da el primer módulo de Make (Webhooks > Custom Webhook)
+MAKE_WEBHOOK_URL = "https://hook.us1.make.com/TU_CODIGO_SECRETO_AQUI" 
+
+# 3. URL A RASTREAR (Ej: Best Sellers Electrónica)
+AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
+
+# ==========================================
+# HERRAMIENTAS
+# ==========================================
 
 def enviar_telegram(mensaje):
-    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-    if not token or not chat_id: return
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": mensaje, "parse_mode": "Markdown"}
-    try: requests.post(url, json=payload, timeout=10)
-    except: pass
+    """Envía notificaciones a tu celular"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ No hay credenciales de Telegram configuradas.")
+        return
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception as e:
+        print(f"Error Telegram: {e}")
 
-def ejecutar_bot():
-    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
-    creatomate_key = os.environ.get("CREATOMATE_API_KEY", "").strip()
-    creds_raw = os.environ.get("GOOGLE_SHEETS_CREDENTIALS", "").strip()
+def obtener_producto_top_1():
+    """El Cazador: Entra a Amazon y saca el #1"""
+    print(f"🕵️‍♂️ Rastreando Amazon: {AMAZON_URL}")
     
-    ID_HOJA = "1SoKRt6eXTAP3IlhZRElHFv8rejr-qVmMoGsKkO__eZQ"
-    TEMPLATE_ID = "3a6f8698-dd48-4a5f-9cad-5b00b206b6b8"
-    AMAZON_TAG = "chmbrand-20"
-
-    print("🚀 Iniciando Bot Blindado...")
+    # Usamos un Agente falso para parecer un humano navegando en Chrome
+    ua = UserAgent()
+    headers = {
+        'User-Agent': ua.random,
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://www.google.com/',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+    }
 
     try:
-        # 1. Google Sheets
-        creds = Credentials.from_service_account_info(json.loads(creds_raw), 
-            scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'])
-        sheet = gspread.authorize(creds).open_by_key(ID_HOJA).get_worksheet(0)
-        print("✅ Sheets Conectado")
-
-        # 2. Gemini
-        url_g = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={gemini_key}"
-        prompt = "Suggest 1 Amazon gadget. Return ONLY JSON: {\"prod\": \"Name\", \"hook\": \"Hook\", \"body\": \"Body\"}"
-        r_g = requests.post(url_g, json={"contents": [{"parts": [{"text": prompt}]}]}, timeout=30)
-        datos = json.loads(re.search(r'\{.*\}', r_g.text, re.DOTALL).group(0))
-        prod_nombre = datos.get('prod', 'Gadget Viral')
-
-        # 3. Creatomate (Paso Crítico con Redirección de Error)
-        print("🚀 Enviando a Creatomate...")
-        h_c = {
-            "Authorization": f"Bearer {creatomate_key}",
-            "Content-Type": "application/json",
-            "Connection": "close" # Cerramos la conexión para evitar el Error 0
-        }
-        payload = {
-            "template_id": TEMPLATE_ID,
-            "modifications": {
-                "Text-1.text": datos.get('hook', 'OFERTA').upper(),
-                "Text-2.text": datos.get('body', '')
-            }
-        }
-
-        video_url = f"https://creatomate.com/renders" # Link genérico por si falla la captura
+        response = requests.get(AMAZON_URL, headers=headers, timeout=15)
         
-        try:
-            res_c = requests.post("https://api.creatomate.com/v2/renders", headers=h_c, json=payload, timeout=60)
-            if res_c.status_code in [200, 201, 202]:
-                video_url = res_c.json()[0]['url']
-                print(f"✅ Respuesta recibida: {res_c.status_code}")
-        except Exception as net_error:
-            # Si da Error 0, pero llegamos aquí, es que la orden ya salió
-            print(f"⚠️ Aviso de red (Error 0), pero la orden fue enviada.")
+        if response.status_code != 200:
+            return None, f"Amazon bloqueó la conexión (Status {response.status_code})"
 
-        # 4. Registro y Notificación
-        l_amz = f"https://www.amazon.com/s?k={prod_nombre.replace(' ', '+')}&tag={AMAZON_TAG}"
-        sheet.append_row([prod_nombre, l_amz, video_url])
+        soup = BeautifulSoup(response.content, 'lxml')
         
-        msg = f"🎬 *¡Bot ha procesado un producto!*\n\n📦 *Producto:* {prod_nombre}\n🎥 [Enlace del Video]({video_url})\n🛒 [Link Amazon]({l_amz})\n\n_Si el video da 404, espera 2 minutos._"
-        enviar_telegram(msg)
-        print("🏁 PROCESO FINALIZADO")
+        # BUSCANDO EL PRODUCTO #1
+        # Amazon cambia el código a veces, buscamos el contenedor del primer item
+        # Usualmente es #gridItemRoot en la nueva vista de Grid
+        producto = soup.select_one('#gridItemRoot') or soup.select_one('.zg-item-immersion')
+
+        if not producto:
+            return None, "No se encontró la estructura de productos en Amazon (Posible cambio de diseño)."
+
+        # 1. EXTRAER NOMBRE
+        nombre_tag = producto.select_one('div > a:nth-of-type(2) > span > div') or \
+                     producto.select_one('.p13n-sc-truncate') or \
+                     producto.select_one('img')
+        
+        nombre = nombre_tag.get_text(strip=True) if nombre_tag else "Producto Top 1"
+        # Si agarró texto vacío, intentamos con el alt de la imagen
+        if len(nombre) < 3 and producto.select_one('img'):
+            nombre = producto.select_one('img').get('alt')
+
+        # 2. EXTRAER IMAGEN
+        img_tag = producto.select_one('img')
+        imagen_url = img_tag.get('src') if img_tag else None
+
+        # 3. EXTRAER LINK Y PONER AFILIADO
+        link_tag = producto.select_one('a.a-link-normal')
+        link_crudo = link_tag.get('href') if link_tag else None
+        
+        link_final = "https://www.amazon.com"
+        if link_crudo:
+            if not link_crudo.startswith('http'):
+                link_final += link_crudo
+            else:
+                link_final = link_crudo
+            
+            # Añadir tu tag de afiliado
+            if "?" in link_final:
+                link_final += f"&tag={AMAZON_TAG}"
+            else:
+                link_final += f"?tag={AMAZON_TAG}"
+
+        if nombre and imagen_url:
+            return {
+                "producto": nombre,
+                "imagen": imagen_url,
+                "link": link_final
+            }, None
+        else:
+            return None, "Datos incompletos (Falta nombre o imagen)"
 
     except Exception as e:
-        error_msg = f"❌ *Error Crítico:* {str(e)}"
-        enviar_telegram(error_msg)
-        print(error_msg)
-        sys.exit(1)
+        return None, f"Error de Scraper: {str(e)}"
+
+# ==========================================
+# EJECUCIÓN PRINCIPAL
+# ==========================================
 
 if __name__ == "__main__":
-    ejecutar_bot()
+    print("🚀 Iniciando Protocolo Amazon-Make...")
+    
+    datos, error = obtener_producto_top_1()
+
+    if error:
+        print(f"❌ {error}")
+        enviar_telegram(f"❌ *Fallo en Scraper Amazon:*\n{error}")
+        exit(1)
+
+    print(f"✅ Producto Encontrado: {datos['producto']}")
+
+    # ENVIAR A MAKE.COM
+    if "hook.us1.make.com" in MAKE_WEBHOOK_URL:
+        try:
+            r = requests.post(MAKE_WEBHOOK_URL, json=datos)
+            if r.status_code == 200:
+                print("✅ Datos enviados a Make correctamente.")
+                enviar_telegram(f"🚀 *Nuevo Top 1 Detectado*\n\n📦 {datos['producto']}\n\n📡 Enviado a Make para crear video.")
+            else:
+                print(f"⚠️ Make respondió error: {r.text}")
+                enviar_telegram(f"⚠️ Make recibió los datos pero dio error: {r.status_code}")
+        except Exception as e:
+            print(f"❌ Error conectando con Make: {e}")
+            enviar_telegram(f"❌ Error fatal conectando con Make: {e}")
+    else:
+        print("⚠️ No se enviaron datos. FALTA CONFIGURAR LA URL DE MAKE EN bot.py")
+        enviar_telegram(f"⚠️ *Falta Configuración:*\nProducto detectado ({datos['producto']}) pero no tengo la URL de Make para enviarlo.")
