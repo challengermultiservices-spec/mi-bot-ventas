@@ -1,2 +1,4 @@
-playwright
-google-generativeai
+requests
+beautifulsoup4
+lxml
+fake-useragent
