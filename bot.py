@@ -1,7 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
 import os
-import json
 import time
 import random
 
@@ -9,14 +8,13 @@ import random
 # 1. CONFIGURACIÓN
 # ==========================================
 
-# El robot leerá automáticamente tu llave nueva desde los "Secrets" de GitHub
+# El robot lee las llaves de los "Secrets" de GitHub
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 AMAZON_TAG = "chmbrand-20"
 
-# 👇👇👇 ¡IMPORTANTE! BORRA ESTO Y PEGA TU ENLACE DE MAKE.COM 👇👇👇
-MAKE_WEBHOOK_URL = "https://hook.us1.make.com/TU_CODIGO_AQUI_SIN_ESPACIOS" 
-# 👆👆👆 (Ejemplo real: https://hook.us1.make.com/abc123xyz...)
+# ✅ TU WEBHOOK DE MAKE (Ya configurado)
+MAKE_WEBHOOK_URL = "https://hook.us2.make.com/5f3gdsmz7oob77i6qorrsiqppb8sfdnw"
 
 AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
 
@@ -33,12 +31,12 @@ def enviar_telegram(mensaje):
     except: pass
 
 def rastrear_amazon():
-    # USAMOS MÁSCARA DE WINDOWS 10 (PC) PARA EVITAR ERRORES MÓVILES
+    # MÁSCARA DE WINDOWS 10 (PC) PARA EVITAR ERRORES
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Referer': 'https://www.amazon.com/',
+        'Referer': 'https://www.google.com/',
         'DNT': '1'
     }
 
@@ -70,7 +68,7 @@ def rastrear_amazon():
         elif link: nombre = link.get_text(strip=True)
 
         imagen_url = img.get('src') if img else None
-        # Truco para mejorar calidad de imagen si es posible
+        # Truco de calidad de imagen
         if imagen_url and "._AC" in imagen_url:
              imagen_url = imagen_url.split("._AC")[0] + "._AC_SL1000_.jpg"
 
@@ -95,14 +93,7 @@ def rastrear_amazon():
 # ==========================================
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Bot...")
-    
-    # Validar URL de Make
-    if "TU_CODIGO_AQUI" in MAKE_WEBHOOK_URL or "make.com" not in MAKE_WEBHOOK_URL:
-        msg = "⚠️ ERROR: Falta pegar el enlace de Make en la línea 17 de bot.py"
-        print(msg)
-        enviar_telegram(msg)
-        exit(1)
+    print("🚀 Iniciando Bot con Make...")
 
     for i in range(3):
         print(f"🔄 Intento {i+1}...")
@@ -111,20 +102,24 @@ if __name__ == "__main__":
         if datos:
             print(f"✅ ENCONTRADO: {datos['producto']}")
             try:
+                # ENVIAR A MAKE
                 r = requests.post(MAKE_WEBHOOK_URL, json=datos)
+                
                 if r.status_code == 200:
-                    enviar_telegram(f"🚀 *¡Éxito!*\nProducto: {datos['producto']}\n✅ Datos enviados a Make.")
-                    print("✅ Enviado a Make.")
-                    exit(0)
+                    msg = f"🚀 *¡Éxito Total!*\n\n📦 *Producto:* {datos['producto']}\n✅ Enviado a Make para crear video."
+                    enviar_telegram(msg)
+                    print("✅ Enviado a Make Correctamente.")
+                    exit(0) # Terminamos con éxito
                 else:
-                    print(f"⚠️ Error Make: {r.status_code}")
+                    print(f"⚠️ Error Make: {r.status_code} - {r.text}")
+                    enviar_telegram(f"⚠️ Make dio error: {r.status_code}")
             except Exception as e:
-                print(f"❌ Error Red: {e}")
+                print(f"❌ Error de Conexión: {e}")
             break 
         
-        print(f"⚠️ Fallo: {error}")
+        print(f"⚠️ Fallo Amazon: {error}")
         time.sleep(5)
     
     if error:
-        enviar_telegram(f"❌ Error: {error}")
+        enviar_telegram(f"❌ Fallaron los 3 intentos en Amazon. Error: {error}")
         exit(1)
