@@ -9,93 +9,96 @@ from fake_useragent import UserAgent
 # CONFIGURACIÓN
 # ==========================================
 
-# 1. TUS CREDENCIALES
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-AMAZON_TAG = "chmbrand-20"  # Tu código de afiliado
+AMAZON_TAG = "chmbrand-20" 
 
-# 2. CONEXIÓN CON MAKE (¡AQUÍ PEGAS TU WEBHOOK!)
-# Este link te lo da el primer módulo de Make (Webhooks > Custom Webhook)
-MAKE_WEBHOOK_URL = "https://hook.us1.make.com/TU_CODIGO_SECRETO_AQUI" 
+# ¡¡¡PEGA AQUÍ TU WEBHOOK DE MAKE!!! (Sin espacios extra)
+MAKE_WEBHOOK_URL = "TU_LINK_DE_MAKE_AQUI" 
 
-# 3. URL A RASTREAR (Ej: Best Sellers Electrónica)
+# Usaremos una categoría específica que suele ser más estable
 AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
 
 # ==========================================
-# HERRAMIENTAS
+# FUNCIONES
 # ==========================================
 
 def enviar_telegram(mensaje):
-    """Envía notificaciones a tu celular"""
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ No hay credenciales de Telegram configuradas.")
-        return
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
     try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
         requests.post(url, json=payload, timeout=10)
-    except Exception as e:
-        print(f"Error Telegram: {e}")
+    except: pass
 
 def obtener_producto_top_1():
-    """El Cazador: Entra a Amazon y saca el #1"""
     print(f"🕵️‍♂️ Rastreando Amazon: {AMAZON_URL}")
     
-    # Usamos un Agente falso para parecer un humano navegando en Chrome
     ua = UserAgent()
+    # Cabeceras rotativas para despistar a Amazon
     headers = {
         'User-Agent': ua.random,
         'Accept-Language': 'en-US,en;q=0.9',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Referer': 'https://www.google.com/',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+        'DNT': '1', # Do Not Track
+        'Upgrade-Insecure-Requests': '1'
     }
 
     try:
-        response = requests.get(AMAZON_URL, headers=headers, timeout=15)
+        response = requests.get(AMAZON_URL, headers=headers, timeout=20)
         
         if response.status_code != 200:
             return None, f"Amazon bloqueó la conexión (Status {response.status_code})"
 
         soup = BeautifulSoup(response.content, 'lxml')
         
-        # BUSCANDO EL PRODUCTO #1
-        # Amazon cambia el código a veces, buscamos el contenedor del primer item
-        # Usualmente es #gridItemRoot en la nueva vista de Grid
-        producto = soup.select_one('#gridItemRoot') or soup.select_one('.zg-item-immersion')
+        # --- ESTRATEGIA MULTI-VISIÓN ---
+        
+        # Intento 1: El ID estándar del primer producto (#p13n-asin-index-0)
+        producto = soup.select_one('#p13n-asin-index-0')
+        
+        # Intento 2: Buscar por la clase de la tarjeta (zg-grid-general-faceout)
+        if not producto:
+            tarjetas = soup.select('.zg-grid-general-faceout')
+            if tarjetas: producto = tarjetas[0]
+            
+        # Intento 3: Buscar cualquier imagen dentro del área de contenido principal
+        if not producto:
+            producto = soup.select_one('.a-cardui img')
+            if producto: producto = producto.find_parent('div', class_='a-cardui')
 
         if not producto:
-            return None, "No se encontró la estructura de productos en Amazon (Posible cambio de diseño)."
+            # Si falla todo, guardamos un pedacito del HTML para ver qué pasó
+            debug_html = str(soup.body)[:500] 
+            return None, f"No se encontró estructura. HTML parcial: {debug_html}"
 
-        # 1. EXTRAER NOMBRE
-        nombre_tag = producto.select_one('div > a:nth-of-type(2) > span > div') or \
-                     producto.select_one('.p13n-sc-truncate') or \
-                     producto.select_one('img')
+        # --- EXTRACCIÓN DE DATOS ---
         
-        nombre = nombre_tag.get_text(strip=True) if nombre_tag else "Producto Top 1"
-        # Si agarró texto vacío, intentamos con el alt de la imagen
-        if len(nombre) < 3 and producto.select_one('img'):
-            nombre = producto.select_one('img').get('alt')
-
-        # 2. EXTRAER IMAGEN
+        # 1. Nombre
+        nombre = "Producto Top 1"
         img_tag = producto.select_one('img')
+        link_tag = producto.select_one('a.a-link-normal')
+        
+        if img_tag and img_tag.get('alt'):
+            nombre = img_tag.get('alt')
+        elif link_tag:
+            nombre = link_tag.get_text(strip=True)
+
+        # 2. Imagen
         imagen_url = img_tag.get('src') if img_tag else None
 
-        # 3. EXTRAER LINK Y PONER AFILIADO
-        link_tag = producto.select_one('a.a-link-normal')
-        link_crudo = link_tag.get('href') if link_tag else None
-        
+        # 3. Link
         link_final = "https://www.amazon.com"
-        if link_crudo:
-            if not link_crudo.startswith('http'):
-                link_final += link_crudo
-            else:
-                link_final = link_crudo
-            
-            # Añadir tu tag de afiliado
-            if "?" in link_final:
-                link_final += f"&tag={AMAZON_TAG}"
-            else:
-                link_final += f"?tag={AMAZON_TAG}"
+        if link_tag:
+            href = link_tag.get('href')
+            if href:
+                if not href.startswith('http'): link_final += href
+                else: link_final = href
+                
+                # Agregar Afiliado
+                sep = "&" if "?" in link_final else "?"
+                link_final += f"{sep}tag={AMAZON_TAG}"
 
         if nombre and imagen_url:
             return {
@@ -107,37 +110,34 @@ def obtener_producto_top_1():
             return None, "Datos incompletos (Falta nombre o imagen)"
 
     except Exception as e:
-        return None, f"Error de Scraper: {str(e)}"
+        return None, f"Error interno: {str(e)}"
 
 # ==========================================
-# EJECUCIÓN PRINCIPAL
+# EJECUCIÓN
 # ==========================================
 
 if __name__ == "__main__":
-    print("🚀 Iniciando Protocolo Amazon-Make...")
-    
     datos, error = obtener_producto_top_1()
 
     if error:
         print(f"❌ {error}")
-        enviar_telegram(f"❌ *Fallo en Scraper Amazon:*\n{error}")
+        enviar_telegram(f"❌ *Fallo Scraper:* {error}")
         exit(1)
 
-    print(f"✅ Producto Encontrado: {datos['producto']}")
-
-    # ENVIAR A MAKE.COM
+    print(f"✅ ÉXITO: {datos['producto']}")
+    
+    # ENVIAR A MAKE
     if "hook.us1.make.com" in MAKE_WEBHOOK_URL:
         try:
             r = requests.post(MAKE_WEBHOOK_URL, json=datos)
             if r.status_code == 200:
-                print("✅ Datos enviados a Make correctamente.")
-                enviar_telegram(f"🚀 *Nuevo Top 1 Detectado*\n\n📦 {datos['producto']}\n\n📡 Enviado a Make para crear video.")
+                print("✅ Enviado a Make.")
+                enviar_telegram(f"🚀 *Producto Detectado:*\n{datos['producto']}\n\n📡 Enviado a Make.")
             else:
-                print(f"⚠️ Make respondió error: {r.text}")
-                enviar_telegram(f"⚠️ Make recibió los datos pero dio error: {r.status_code}")
+                print(f"⚠️ Error Make: {r.status_code}")
+                enviar_telegram(f"⚠️ Error Make: {r.status_code}")
         except Exception as e:
-            print(f"❌ Error conectando con Make: {e}")
-            enviar_telegram(f"❌ Error fatal conectando con Make: {e}")
+            print(f"❌ Error conexión: {e}")
     else:
-        print("⚠️ No se enviaron datos. FALTA CONFIGURAR LA URL DE MAKE EN bot.py")
-        enviar_telegram(f"⚠️ *Falta Configuración:*\nProducto detectado ({datos['producto']}) pero no tengo la URL de Make para enviarlo.")
+        print("⚠️ URL de Make no configurada o incorrecta.")
+        enviar_telegram(f"⚠️ *Falta URL Make:*\nProducto: {datos['producto']}")
