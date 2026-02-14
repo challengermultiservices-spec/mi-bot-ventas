@@ -47,7 +47,7 @@ def rastrear_amazon_top_10():
             
             nombre = img.get('alt', "") if img else ""
             
-            # FILTRO: Solo productos físicos reales
+            # FILTRO: Solo productos físicos reales (evita suscripciones tipo Blink)
             if any(x in nombre.lower() for x in ["subscription", "plan", "membership", "digital", "blink"]):
                 continue
 
@@ -90,9 +90,12 @@ if __name__ == "__main__":
             r = requests.post(MAKE_WEBHOOK_URL, json=p)
             if r.status_code == 200:
                 enviados += 1
-                print(f"✅ Enviado: {p['producto']}")
-                time.sleep(10)
-        except:
-            print(f"❌ Error enviando {p['producto']}")
+                print(f"✅ Enviado a Make: {p['producto']}")
+                # PAUSA DE SEGURIDAD: 10 segundos entre cada producto para evitar error 429
+                time.sleep(10) 
+            else:
+                print(f"⚠️ Error en Make ({r.status_code}) para: {p['producto']}")
+        except Exception as e:
+            print(f"❌ Error de conexión: {e}")
 
-    enviar_telegram(f"✅ *¡Éxito!* Se enviaron {enviados} productos reales a Make.")
+    enviar_telegram(f"✅ *¡Éxito!* Se enviaron {enviados} productos reales a Make con pausas de seguridad.")
