@@ -91,7 +91,7 @@ if __name__ == "__main__":
             if r.status_code == 200:
                 enviados += 1
                 print(f"✅ Enviado: {p['producto']}")
-                time.sleep(2)
+                time.sleep(10)
         except:
             print(f"❌ Error enviando {p['producto']}")
 
