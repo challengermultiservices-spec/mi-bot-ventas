@@ -13,7 +13,7 @@ TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 AMAZON_TAG = "chmbrand-20"
 
-# ✅ TU NUEVO WEBHOOK DE MAKE (Ya configurado)
+# ✅ TU NUEVO WEBHOOK DE MAKE (Actualizado)
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/iqydw7yi7jr9qwqpmad5vff1gejz2pbh"
 
 # URL de Amazon (Top Ventas Electrónica)
