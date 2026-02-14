@@ -8,14 +8,15 @@ import random
 # 1. CONFIGURACIÓN
 # ==========================================
 
-# El robot lee las llaves de los "Secrets" de GitHub
+# El robot lee las llaves de seguridad de GitHub
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 AMAZON_TAG = "chmbrand-20"
 
-# ✅ TU WEBHOOK DE MAKE (Ya configurado)
-MAKE_WEBHOOK_URL = "https://hook.us2.make.com/5f3gdsmz7oob77i6qorrsiqppb8sfdnw"
+# ✅ TU NUEVO WEBHOOK DE MAKE (Ya configurado)
+MAKE_WEBHOOK_URL = "https://hook.us2.make.com/iqydw7yi7jr9qwqpmad5vff1gejz2pbh"
 
+# URL de Amazon (Top Ventas Electrónica)
 AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
 
 # ==========================================
@@ -23,6 +24,7 @@ AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
 # ==========================================
 
 def enviar_telegram(mensaje):
+    """Envía notificaciones a tu Telegram"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -31,6 +33,8 @@ def enviar_telegram(mensaje):
     except: pass
 
 def rastrear_amazon():
+    """Busca el producto #1 en Amazon simulando ser una PC"""
+    
     # MÁSCARA DE WINDOWS 10 (PC) PARA EVITAR ERRORES
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -48,30 +52,33 @@ def rastrear_amazon():
 
         soup = BeautifulSoup(response.content, 'lxml')
 
+        # Verificar si Amazon nos pide Captcha
         if "captcha" in soup.text.lower():
             return None, "Amazon pide Captcha (Bloqueo temporal)"
 
-        # ESTRATEGIA DE BÚSQUEDA (PC)
+        # ESTRATEGIA DE BÚSQUEDA (Modo PC)
         producto = soup.select_one('#gridItemRoot') # Grid moderno
-        if not producto: producto = soup.select_one('.zg-item-immersion') # Lista vieja
+        if not producto: producto = soup.select_one('.zg-item-immersion') # Lista clásica
         if not producto: producto = soup.select_one('div[class*="zg-grid-general-faceout"]') # Genérico
 
         if not producto:
             return None, "No se encontró producto (HTML desconocido en modo PC)"
 
-        # EXTRACCIÓN
+        # EXTRACCIÓN DE DATOS
         img = producto.select_one('img')
         link = producto.select_one('a.a-link-normal')
         
+        # Nombre del producto
         nombre = "Top 1 Amazon"
         if img and img.get('alt'): nombre = img.get('alt')
         elif link: nombre = link.get_text(strip=True)
 
+        # Imagen (Intentamos obtener la alta resolución)
         imagen_url = img.get('src') if img else None
-        # Truco de calidad de imagen
         if imagen_url and "._AC" in imagen_url:
              imagen_url = imagen_url.split("._AC")[0] + "._AC_SL1000_.jpg"
 
+        # Enlace de afiliado
         link_final = "https://www.amazon.com"
         if link:
             href = link.get('href')
@@ -80,6 +87,7 @@ def rastrear_amazon():
                 sep = "&" if "?" in base else "?"
                 link_final = f"{base}{sep}tag={AMAZON_TAG}"
 
+        # Validar que tenemos lo necesario
         if nombre and imagen_url:
             return {"producto": nombre, "imagen": imagen_url, "link": link_final}, None
         
@@ -89,12 +97,13 @@ def rastrear_amazon():
         return None, f"Error Python: {str(e)}"
 
 # ==========================================
-# 3. EJECUCIÓN
+# 3. EJECUCIÓN PRINCIPAL
 # ==========================================
 
 if __name__ == "__main__":
     print("🚀 Iniciando Bot con Make...")
 
+    # Intentamos 3 veces por si Amazon falla a la primera
     for i in range(3):
         print(f"🔄 Intento {i+1}...")
         datos, error = rastrear_amazon()
@@ -102,7 +111,7 @@ if __name__ == "__main__":
         if datos:
             print(f"✅ ENCONTRADO: {datos['producto']}")
             try:
-                # ENVIAR A MAKE
+                # ENVIAR A MAKE (Al nuevo enlace)
                 r = requests.post(MAKE_WEBHOOK_URL, json=datos)
                 
                 if r.status_code == 200:
@@ -117,6 +126,7 @@ if __name__ == "__main__":
                 print(f"❌ Error de Conexión: {e}")
             break 
         
+        # Si falló, esperamos 5 segundos y reintentamos
         print(f"⚠️ Fallo Amazon: {error}")
         time.sleep(5)
     
