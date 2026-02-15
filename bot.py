@@ -4,17 +4,14 @@ import os
 import time
 
 # ==========================================
-# 1. CONFIGURACIÓN
+# 1. CONFIGURACIÓN (CHM BRAND)
 # ==========================================
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 AMAZON_TAG = "chmbrand-20"
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/iqydw7yi7jr9qwqpmad5vff1gejz2pbh"
-AMAZON_URL = "https://www.amazon.com/gp/bestsellers/electronics/"
-
-# ==========================================
-# 2. FUNCIONES
-# ==========================================
+# Usamos una categoría más específica de Electrónica para asegurar resultados reales
+AMAZON_URL = "https://www.amazon.com/Best-Sellers-Electronics-Accessories-Supplies/zgbs/electronics/281407/"
 
 def enviar_telegram(mensaje):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
@@ -26,76 +23,52 @@ def enviar_telegram(mensaje):
 
 def rastrear_amazon_top_10():
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         'Accept-Language': 'en-US,en;q=0.9'
     }
-
     try:
         response = requests.get(AMAZON_URL, headers=headers, timeout=20)
-        if response.status_code != 200: return [], f"Error Amazon: {response.status_code}"
-
-        soup = BeautifulSoup(response.content, 'lxml')
-        items = soup.select('#gridItemRoot')
+        soup = BeautifulSoup(response.content, 'html.parser')
+        
+        # Buscamos por la clase más común de productos en 2026
+        items = soup.find_all('div', {'id': 'gridItemRoot'})
         
         productos_encontrados = []
-        
         for item in items:
             if len(productos_encontrados) >= 10: break
-
-            img = item.select_one('img')
-            link = item.select_one('a.a-link-normal')
             
-            nombre = img.get('alt', "") if img else ""
+            nombre_tag = item.find('div', {'class': '_cDE31_p13n-sc-css-line-clamp-3_2A69A'})
+            if not nombre_tag: nombre_tag = item.find('span', {'class': 'a-truncate-full'})
             
-            # FILTRO: Solo productos físicos reales (evita suscripciones tipo Blink)
-            if any(x in nombre.lower() for x in ["subscription", "plan", "membership", "digital", "blink"]):
+            nombre = nombre_tag.text.strip() if nombre_tag else ""
+            
+            # FILTRO DINÁMICO: Evitamos basura digital
+            if any(x in nombre.lower() for x in ["subscription", "gift card", "digital", "membership"]):
                 continue
 
-            imagen_url = img.get('src') if img else None
-            if imagen_url and "._AC" in imagen_url:
-                imagen_url = imagen_url.split("._AC")[0] + "._AC_SL1000_.jpg"
+            link_tag = item.find('a', {'class': 'a-link-normal'})
+            img_tag = item.find('img')
 
-            link_final = "https://www.amazon.com"
-            if link:
-                href = link.get('href')
-                base = href if href.startswith('http') else "https://www.amazon.com" + href
-                link_final = f"{base.split('?')[0]}?tag={AMAZON_TAG}"
-
-            if nombre and imagen_url:
+            if nombre and link_tag and img_tag:
+                link_raw = "https://www.amazon.com" + link_tag.get('href').split('?')[0]
                 productos_encontrados.append({
                     "producto": nombre,
-                    "imagen": imagen_url,
-                    "link": link_final
+                    "imagen": img_tag.get('src'),
+                    "link": f"{link_raw}?tag={AMAZON_TAG}"
                 })
-
         return productos_encontrados, None
     except Exception as e:
         return [], str(e)
 
-# ==========================================
-# 3. EJECUCIÓN PRINCIPAL
-# ==========================================
-
 if __name__ == "__main__":
-    print("🚀 Iniciando Escaneo para CHM Brand...")
-    lista_productos, error = rastrear_amazon_top_10()
-
-    if not lista_productos:
-        enviar_telegram(f"❌ No se encontraron productos reales. Error: {error}")
-        exit(1)
-
-    enviados = 0
-    for p in lista_productos:
-        try:
+    lista, error = rastrear_amazon_top_10()
+    if not lista:
+        enviar_telegram(f"⚠️ Amazon cambió el diseño. No se encontraron productos. Error: {error}")
+    else:
+        enviados = 0
+        for p in lista:
             r = requests.post(MAKE_WEBHOOK_URL, json=p)
             if r.status_code == 200:
                 enviados += 1
-                print(f"✅ Enviado a Make: {p['producto']}")
-                # PAUSA DE SEGURIDAD: 10 segundos entre cada producto para evitar error 429
-                time.sleep(10) 
-            else:
-                print(f"⚠️ Error en Make ({r.status_code}) para: {p['producto']}")
-        except Exception as e:
-            print(f"❌ Error de conexión: {e}")
-
-    enviar_telegram(f"✅ *¡Éxito!* Se enviaron {enviados} productos reales a Make con pausas de seguridad.")
+                time.sleep(10) # Pausa de seguridad para tu nuevo plan de Make
+        enviar_telegram(f"✅ *¡CHM Brand Activo!* Se enviaron {enviados} productos reales a Make.")
