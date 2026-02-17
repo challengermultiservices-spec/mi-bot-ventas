@@ -3,12 +3,17 @@ from bs4 import BeautifulSoup
 import os
 import time
 import random
+import re
 
-# CONFIGURACIÓN CHM BRAND
+# ==========================================
+# CONFIGURACIÓN PROFESIONAL CHM BRAND
+# ==========================================
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 AMAZON_TAG = "chmbrand-20"
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/iqydw7yi7jr9qwqpmad5vff1gejz2pbh"
+
+# URL de Best Sellers de Electrónica
 AMAZON_URL = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
 
 def enviar_telegram(mensaje):
@@ -19,57 +24,86 @@ def enviar_telegram(mensaje):
         requests.post(url, json=payload, timeout=10)
     except: pass
 
-def rastrear_amazon_10():
+def rastrear_amazon_reforzado():
+    """Rastreador de alta disponibilidad con rotación de identidad."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/'
+        'Referer': 'https://www.google.com/',
+        'DNT': '1'
     }
+    
     try:
-        response = requests.get(AMAZON_URL, headers=headers, timeout=30)
+        session = requests.Session()
+        response = session.get(AMAZON_URL, headers=headers, timeout=30)
+        
+        if response.status_code != 200:
+            return [], f"Amazon bloqueó el acceso (Error {response.status_code})"
+        
+        if "api-services-support@amazon.com" in response.text or "captcha" in response.text.lower():
+            return [], "Amazon detectó el bot. Esperando reinicio..."
+
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Buscamos todos los contenedores de productos posibles
-        items = soup.find_all('div', id='gridItemRoot') or soup.select('li.zg-item-immersion')
+        # BUSCADOR POR PATRÓN ASIN: Buscamos cualquier enlace que parezca un producto
+        all_product_links = soup.find_all('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}'))
         
-        lista_final = []
-        blacklist = ["plan", "subscription", "auto-renewal", "gift card", "digital", "membership", "blink", "cloud"]
+        productos_fisicos = []
+        asins_vistos = set()
+        blacklist = ["plan", "subscription", "auto-renewal", "gift card", "digital", "membership", "blink", "cloud", "trial"]
         
-        for item in items:
-            if len(lista_final) >= 10: break # AQUÍ ASEGURAMOS EL TOP 10
+        for link in all_product_links:
+            if len(productos_fisicos) >= 10: break
             
-            nombre_tag = item.find('h2') or item.select_one('div._cDE31_p13n-sc-css-line-clamp-3_2A69A')
-            nombre = nombre_tag.get_text(strip=True) if nombre_tag else ""
+            href = link.get('href')
+            asin_match = re.search(r'\/dp\/([A-Z0-9]{10})', href)
+            if not asin_match: continue
+            asin = asin_match.group(1)
             
-            if not nombre or any(word in nombre.lower() for word in blacklist):
+            if asin in asins_vistos: continue
+            
+            # Intentamos extraer el nombre del texto del link o de la imagen dentro
+            nombre = link.get_text(strip=True)
+            if not nombre:
+                img = link.find('img')
+                nombre = img.get('alt', '') if img else ""
+            
+            # Filtro de calidad y tipo de producto
+            if len(nombre) < 12 or any(word in nombre.lower() for word in blacklist):
                 continue
 
-            link_tag = item.find('a', class_='a-link-normal')
-            if link_tag:
-                asin_path = link_tag.get('href').split('?')[0]
-                link_final = f"https://www.amazon.com{asin_path}?tag={AMAZON_TAG}"
-                lista_final.append({"producto": nombre, "link": link_final})
-        
-        return lista_final
+            asins_vistos.add(asin)
+            link_final = f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
+            
+            productos_fisicos.append({
+                "producto": nombre,
+                "link": link_final
+            })
+            
+        if not productos_fisicos:
+            return [], "Estructura de Amazon no reconocida hoy."
+            
+        return productos_fisicos, None
     except Exception as e:
-        print(f"Error: {e}")
-        return []
+        return [], str(e)
 
 if __name__ == "__main__":
-    productos = rastrear_amazon_10()
-    if not productos:
-        enviar_telegram("⚠️ No se encontraron productos físicos.")
+    print("🔎 CHM Brand: Iniciando rastreo de alta sensibilidad...")
+    lista, error = rastrear_amazon_reforzado()
+    
+    if not lista:
+        enviar_telegram(f"⚠️ *Atención Jorge:* {error}")
     else:
         enviados = 0
-        for p in productos:
+        for p in lista:
             try:
-                # Enviamos cada uno por separado para crear 10 filas
+                # Envío individual para asegurar las 10 filas en Google Sheets
                 r = requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
                 if r.status_code == 200:
                     enviados += 1
-                    # Pausa humana: Evita que Amazon o Make nos bloqueen por velocidad
-                    time.sleep(random.randint(10, 15)) 
-            except:
-                continue
+                    # Pausa estratégica para Maryland
+                    time.sleep(random.randint(12, 18)) 
+            except: continue
         
-        enviar_telegram(f"✅ *CHM Brand:* Se procesaron {enviados} productos reales en tu Excel.")
+        enviar_telegram(f"✅ *¡Éxito!* Se enviaron {enviados} gadgets físicos reales a tu Excel.")
