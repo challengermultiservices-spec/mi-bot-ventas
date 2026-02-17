@@ -4,7 +4,9 @@ import os
 import time
 import re
 
-# CONFIGURACIÓN ELITE CHM BRAND - USA
+# ==========================================
+# CONFIGURACIÓN ELITE CHM BRAND - USA TOTAL
+# ==========================================
 SCRAPER_API_KEY = os.getenv('SCRAPERAPI_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -19,54 +21,56 @@ def enviar_telegram(mensaje):
 
 def main():
     if not SCRAPER_API_KEY:
-        enviar_telegram("❌ Error: No se detectó la llave en GitHub.")
+        enviar_telegram("❌ Error: No se detectó la llave SCRAPERAPI_KEY en GitHub.")
         return
 
-    # Usamos ScraperAPI con renderizado para ver la página como un humano
+    # Usamos ScraperAPI con ultra-renderizado y ubicación fija en USA
     target_url = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
-    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true&country_code=us"
+    proxy_url = "http://api.scraperapi.com"
+    params = {
+        'api_key': SCRAPER_API_KEY,
+        'url': target_url,
+        'render': 'true',
+        'country_code': 'us',
+        'wait_for_selector': 'div' # Esperamos a que la página cargue algo de contenido
+    }
 
     try:
-        print("🛡️ CHM Brand: Escaneando productos físicos en USA...")
-        r = requests.get(proxy_url, timeout=60)
+        print("🛡️ CHM Brand: Iniciando escaneo profundo de enlaces...")
+        r = requests.get(proxy_url, params=params, timeout=90)
         soup = BeautifulSoup(r.content, 'html.parser')
-
-        # BUSCADOR AGRESIVO: Buscamos cualquier cosa que parezca un producto del Top 100
-        # Amazon usa diferentes etiquetas, así que probamos todas las conocidas
-        items = soup.select('div#gridItemRoot') or \
-                soup.select('div[data-asin]') or \
-                soup.select('li.zg-item-immersion') or \
-                soup.select('div.zg-grid-general-faceout')
 
         productos = []
         asins_vistos = set()
-        blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial"]
+        blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial", "auto-renewal"]
 
-        for item in items:
+        # ESCANEO DE ENLACES (Nuclear Option)
+        # Buscamos todos los enlaces que tengan el patrón /dp/ o /gp/product/
+        enlaces = soup.find_all('a', href=re.compile(r'/(dp|gp/product)/[A-Z0-9]{10}'))
+
+        for link in enlaces:
             if len(productos) >= 10: break
             
-            # Buscamos el link para extraer el ASIN (el ADN del producto)
-            link_tag = item.find('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}'))
-            if not link_tag: continue
+            href = link.get('href')
+            asin_match = re.search(r'/(dp|gp/product)/([A-Z0-9]{10})', href)
+            if not asin_match: continue
             
-            href = link_tag.get('href')
-            asin_match = re.search(r'\/dp\/([A-Z0-9]{10})', href)
-            asin = asin_match.group(1) if asin_match else None
+            # El ASIN es el grupo 2 en este patrón
+            asin = asin_match.group(2)
+            if asin in asins_vistos: continue
 
-            if not asin or asin in asins_vistos: continue
-
-            # Buscamos el nombre: puede estar en un h2, un span o en el alt de la imagen
-            nombre = ""
-            name_tag = item.find('h2') or item.select_one('div._cDE31_p13n-sc-css-line-clamp-3_2A69A') or item.find('span')
-            if name_tag:
-                nombre = name_tag.get_text(strip=True)
-            
+            # Buscamos el nombre: Prioridad 1: Texto del link. Prioridad 2: Alt de imagen interna.
+            nombre = link.get_text(strip=True)
             if not nombre:
-                img_tag = item.find('img')
+                img_tag = link.find('img')
                 nombre = img_tag.get('alt', '') if img_tag else ""
+            
+            # Si sigue vacío, buscamos en el contenedor padre
+            if not nombre:
+                nombre = link.parent.get_text(strip=True)[:100]
 
-            # Filtros de seguridad
-            if len(nombre) < 15 or any(w in nombre.lower() for w in blacklist):
+            # Filtros de calidad y seguridad
+            if len(nombre) < 12 or any(w in nombre.lower() for w in blacklist):
                 continue
 
             asins_vistos.add(asin)
@@ -76,18 +80,17 @@ def main():
             })
 
         if not productos:
-            enviar_telegram("⚠️ Amazon ocultó los nombres. Reintentando con escaneo de enlaces...")
-            # Si fallan los selectores, buscamos directamente todos los enlaces de la página
-            for a_tag in soup.find_all('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}')):
-                if len(productos) >= 10: break
-                # Lógica de emergencia aquí...
-        
-        # Enviamos los resultados a Make
-        for p in productos:
-            requests.post(MAKE_WEBHOOK_URL, json=p)
-            time.sleep(12) # Pausa para que el Excel no se trabe
+            enviar_telegram("⚠️ Amazon bloqueó todos los identificadores. Probando nueva ruta mañana.")
+            return
 
-        enviar_telegram(f"✅ *¡Operación Exitosa!* Se inyectaron {len(productos)} productos únicos de USA.")
+        # Enviamos los 10 productos finales a tu Excel de USA
+        for p in productos:
+            try:
+                requests.post(MAKE_WEBHOOK_URL, json=p, timeout=15)
+                time.sleep(12) # Pausa humana para asegurar las filas en Maryland
+            except: continue
+
+        enviar_telegram(f"✅ *¡Operación Exitosa!* Se inyectaron {len(productos)} productos reales detectados por ADN.")
 
     except Exception as e:
         enviar_telegram(f"❌ Error crítico: {str(e)}")
