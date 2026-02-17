@@ -5,7 +5,7 @@ import time
 import re
 
 # ==========================================
-# CONFIGURACIÓN MAESTRA - CHM BRAND USA
+# CONFIGURACIÓN CHM BRAND - USA TOTAL
 # ==========================================
 SCRAPER_API_KEY = os.getenv('SCRAPERAPI_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -21,24 +21,30 @@ def enviar_telegram(mensaje):
 
 def main():
     if not SCRAPER_API_KEY:
-        enviar_telegram("❌ Error: No se detectó la llave SCRAPERAPI_KEY en GitHub.")
+        enviar_telegram("❌ Error: Llave SCRAPERAPI_KEY no encontrada.")
         return
 
-    # Usamos ScraperAPI con ultra-renderizado para ver la página como un humano real
+    # Escudo ScraperAPI con instrucciones de ESPERA (render=true)
     target_url = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
     proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true&country_code=us"
 
     try:
-        print("🛡️ CHM Brand: Iniciando escaneo profundo...")
+        print("🔎 Simulando navegación humana en USA...")
         r = requests.get(proxy_url, timeout=90)
-        soup = BeautifulSoup(r.content, 'html.parser')
+        
+        if r.status_code != 200:
+            enviar_telegram(f"❌ Error de acceso: {r.status_code}")
+            return
 
+        soup = BeautifulSoup(r.content, 'html.parser')
+        
+        # BUSCADOR DE ADN (Enlaces de producto)
+        # Buscamos patrones /dp/ o /gp/product/ que son universales en Amazon
+        enlaces = soup.find_all('a', href=re.compile(r'/(dp|gp/product)/[A-Z0-9]{10}'))
+        
         productos = []
         asins_vistos = set()
-        blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial", "auto-renewal"]
-
-        # BUSCADOR POR ADN: Rastreamos cada link de la página buscando el patrón de Amazon
-        enlaces = soup.find_all('a', href=re.compile(r'/(dp|gp/product)/[A-Z0-9]{10}'))
+        blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial"]
 
         for link in enlaces:
             if len(productos) >= 10: break
@@ -50,16 +56,13 @@ def main():
             asin = match.group(2)
             if asin in asins_vistos: continue
 
-            # Intentamos sacar el nombre de 3 formas distintas
+            # Extraemos el nombre: Texto del link o Alt de la imagen
             nombre = link.get_text(strip=True)
             if not nombre:
                 img = link.find('img')
                 nombre = img.get('alt', '') if img else ""
-            if not nombre:
-                # Si falla lo anterior, buscamos en el contenedor de al lado
-                nombre = link.parent.get_text(strip=True)[:100]
-
-            # Filtro de calidad
+            
+            # Si el nombre es muy corto o es basura digital, saltamos
             if len(nombre) < 15 or any(w in nombre.lower() for w in blacklist):
                 continue
 
@@ -70,17 +73,18 @@ def main():
             })
 
         if not productos:
-            enviar_telegram("⚠️ Amazon bloqueó el escaneo de nombres hoy. Reintentando mañana.")
+            enviar_telegram("⚠️ Amazon ocultó los datos en esta simulación. Reintentando...")
             return
 
-        # Inyectamos los 10 productos en tu Google Sheet (vía Make)
+        # Enviamos los 10 ganadores a tu Excel
         for p in productos:
             try:
-                requests.post(MAKE_WEBHOOK_URL, json=p, timeout=15)
-                time.sleep(12) # Pausa vital para evitar bloqueos en el Excel
+                requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
+                # Pausa para que Make y Google Sheets procesen sin errores
+                time.sleep(15) 
             except: continue
 
-        enviar_telegram(f"✅ *¡Operación Exitosa!* Se inyectaron {len(productos)} productos reales detectados por ADN.")
+        enviar_telegram(f"✅ *CHM Brand USA:* ¡Misión cumplida! Se inyectaron {len(productos)} productos únicos.")
 
     except Exception as e:
         enviar_telegram(f"❌ Error crítico: {str(e)}")
