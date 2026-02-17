@@ -2,7 +2,7 @@ name: CHM Brand USA Bot
 
 on:
   schedule:
-    - cron: '0 13 * * *' # Corre diario a la 1:00 PM
+    - cron: '0 13 * * *' # Corre diario a las 1:00 PM
   workflow_dispatch: # Botón para correrlo a mano
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
         run: pip install requests beautifulsoup4
       - name: Ejecutar Bot
         env:
-          # Estas líneas inyectan tus secretos en el código
+          # Estas son las llaves que configuraste en GitHub Secrets
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
