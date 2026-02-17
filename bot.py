@@ -3,45 +3,47 @@ from bs4 import BeautifulSoup
 import os
 import time
 import random
-import re
 
 # ==========================================
 # CONFIGURACIÓN ELITE CHM BRAND - USA TOTAL
 # ==========================================
+SCRAPER_API_KEY = os.getenv('SCRAPERAPI_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-AMAZON_TAG = "chmbrand-20" 
+AMAZON_TAG = "chmbrand-20"
 MAKE_WEBHOOK_URL = "https://hook.us2.make.com/iqydw7yi7jr9qwqpmad5vff1gejz2pbh"
 
-# URL de Best Sellers Electrónica USA
-AMAZON_URL = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
-
 def enviar_telegram(mensaje):
+    """Envía el estado de la misión a tu celular."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
         requests.post(url, json=payload, timeout=10)
-    except: pass
+    except:
+        pass
 
-def rastrear_top_10_usa():
-    """Extrae 10 productos únicos evitando duplicados y basura digital."""
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/'
-    }
+def obtener_productos_con_escudo():
+    """Usa ScraperAPI para entrar a Amazon sin ser detectado."""
+    target_url = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
+    
+    # El escudo: Pasamos por ScraperAPI con renderizado de JavaScript activo
+    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true&country_code=us"
     
     try:
-        session = requests.Session()
-        response = session.get(AMAZON_URL, headers=headers, timeout=30)
+        print("🛡️ CHM Brand: Atravesando el muro de Amazon con Proxy...")
+        response = requests.get(proxy_url, timeout=60)
+        
+        if response.status_code != 200:
+            return [], f"Error de acceso (Código {response.status_code}). Revisa tu API Key."
+
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Selectores universales
+        # Selectores de productos físicos
         items = soup.select('div#gridItemRoot') or soup.select('li.zg-item-immersion')
         
         productos_finales = []
-        asins_vistos = set() # Evita repetidos (Solución a image_3ee9e3.png)
+        # Lista negra para evitar basura digital
         blacklist = ["plan", "subscription", "auto-renewal", "gift card", "digital", "membership", "blink", "cloud", "trial"]
         
         for item in items:
@@ -52,36 +54,40 @@ def rastrear_top_10_usa():
             
             if nombre_tag and link_tag:
                 nombre = nombre_tag.get_text(strip=True)
-                asin_match = re.search(r'\/dp\/([A-Z0-9]{10})', link_tag.get('href'))
-                asin = asin_match.group(1) if asin_match else None
+                
+                # Filtro de seguridad: Solo lo que se puede tocar y vender
+                if any(word in nombre.lower() for word in blacklist):
+                    continue
 
-                # FILTROS DE SEGURIDAD
-                if not asin or asin in asins_vistos: continue
-                if any(word in nombre.lower() for word in blacklist): continue
-
-                link_final = f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
-                asins_vistos.add(asin)
-                productos_finales.append({"producto": nombre[:120], "link": link_final})
+                asin_path = link_tag.get('href').split('?')[0]
+                link_final = f"https://www.amazon.com{asin_path}?tag={AMAZON_TAG}"
+                
+                productos_finales.append({
+                    "producto": nombre[:110],
+                    "link": link_final
+                })
         
-        return productos_finales
-    except: return []
+        return productos_finales, None
+    except Exception as e:
+        return [], str(e)
 
 if __name__ == "__main__":
-    print("🔎 CHM Brand: Iniciando barrido nacional...")
-    lista = rastrear_top_10_usa()
+    print("🚀 Iniciando motor de búsqueda USA...")
+    lista, error = obtener_productos_con_escudo()
     
     if not lista:
-        enviar_telegram("⚠️ Amazon bloqueó la vista o no se encontraron productos físicos hoy.")
+        enviar_telegram(f"❌ *CHM Report:* No se pudo romper el bloqueo. {error}")
     else:
-        enviados = 0
+        exitos = 0
         for p in lista:
             try:
-                # Envío individual para forzar 10 filas separadas
+                # Enviamos cada producto individual para crear las 10 filas
                 r = requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
                 if r.status_code == 200:
-                    enviados += 1
-                    # PAUSA CRÍTICA: 25 segundos para asegurar que Google Sheets escriba bien
-                    time.sleep(random.randint(20, 30)) 
-            except: continue
+                    exitos += 1
+                    # Pausa de 8 segundos: suficiente con el proxy activo
+                    time.sleep(8) 
+            except:
+                continue
         
-        enviar_telegram(f"✅ *¡Éxito!* Se inyectaron {enviados} productos únicos en tu Excel.")
+        enviar_telegram(f"✅ *¡Misión Cumplida!* Se inyectaron {exitos} productos reales de USA en tu inventario.")
