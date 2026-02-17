@@ -4,9 +4,7 @@ import os
 import time
 import re
 
-# ==========================================
-# CONFIGURACIÓN CHM BRAND - USA TOTAL
-# ==========================================
+# CONFIGURACIÓN CHM BRAND
 SCRAPER_API_KEY = os.getenv('SCRAPERAPI_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -21,33 +19,26 @@ def enviar_telegram(mensaje):
 
 def main():
     if not SCRAPER_API_KEY:
-        enviar_telegram("❌ Error: Llave SCRAPERAPI_KEY no encontrada.")
+        enviar_telegram("❌ Error: No se detectó la llave en GitHub.")
         return
 
-    # Escudo ScraperAPI con instrucciones de ESPERA (render=true)
-    target_url = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
-    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true&country_code=us"
+    # Usamos ScraperAPI con ultra-renderizado y espera de 5 segundos para que cargue todo
+    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url=https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/&render=true&country_code=us&wait_for_selector=.zg-grid-general-faceout"
 
     try:
-        print("🔎 Simulando navegación humana en USA...")
-        r = requests.get(proxy_url, timeout=90)
-        
-        if r.status_code != 200:
-            enviar_telegram(f"❌ Error de acceso: {r.status_code}")
-            return
-
+        print("🛡️ CHM Brand: Iniciando escaneo profundo...")
+        r = requests.get(proxy_url, timeout=120)
         soup = BeautifulSoup(r.content, 'html.parser')
-        
-        # BUSCADOR DE ADN (Enlaces de producto)
-        # Buscamos patrones /dp/ o /gp/product/ que son universales en Amazon
+
+        # Buscamos cualquier link que tenga un código de producto (ASIN)
         enlaces = soup.find_all('a', href=re.compile(r'/(dp|gp/product)/[A-Z0-9]{10}'))
         
-        productos = []
+        productos_unicos = []
         asins_vistos = set()
         blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial"]
 
         for link in enlaces:
-            if len(productos) >= 10: break
+            if len(productos_unicos) >= 10: break
             
             href = link.get('href')
             match = re.search(r'/(dp|gp/product)/([A-Z0-9]{10})', href)
@@ -56,35 +47,34 @@ def main():
             asin = match.group(2)
             if asin in asins_vistos: continue
 
-            # Extraemos el nombre: Texto del link o Alt de la imagen
-            nombre = link.get_text(strip=True)
-            if not nombre:
-                img = link.find('img')
-                nombre = img.get('alt', '') if img else ""
+            # Extraemos nombre del texto o del atributo de la imagen
+            nombre = link.get_text(strip=True) or (link.find('img').get('alt', '') if link.find('img') else "")
             
-            # Si el nombre es muy corto o es basura digital, saltamos
             if len(nombre) < 15 or any(w in nombre.lower() for w in blacklist):
                 continue
 
             asins_vistos.add(asin)
-            productos.append({
-                "producto": nombre[:120],
-                "link": f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
-            })
+            productos_unicos.append({"producto": nombre[:120], "link": f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"})
 
-        if not productos:
-            enviar_telegram("⚠️ Amazon ocultó los datos en esta simulación. Reintentando...")
+        if not productos_unicos:
+            enviar_telegram("⚠️ No se encontraron productos nuevos hoy. Reintentando...")
             return
 
-        # Enviamos los 10 ganadores a tu Excel
-        for p in productos:
+        # ENVIAMOS UNO POR UNO CON MENSAJE DE CONFIRMACIÓN
+        enviados_con_exito = 0
+        for p in productos_unicos:
             try:
-                requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
-                # Pausa para que Make y Google Sheets procesen sin errores
-                time.sleep(15) 
-            except: continue
+                # El tiempo de espera es vital para que Google Sheets no bloquee la fila
+                res = requests.post(MAKE_WEBHOOK_URL, json=p, timeout=30)
+                if res.status_code == 200:
+                    enviados_con_exito += 1
+                    # TE AVISARÁ CADA VEZ QUE UNO ENTRE A MAKE
+                    print(f"Enviado: {p['producto']}") 
+                time.sleep(20) # Pausa larga para asegurar la escritura
+            except:
+                continue
 
-        enviar_telegram(f"✅ *CHM Brand USA:* ¡Misión cumplida! Se inyectaron {len(productos)} productos únicos.")
+        enviar_telegram(f"✅ *CHM Final:* Se procesaron {enviados_con_exito} productos diferentes.")
 
     except Exception as e:
         enviar_telegram(f"❌ Error crítico: {str(e)}")
