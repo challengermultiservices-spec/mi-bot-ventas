@@ -6,7 +6,7 @@ import random
 import re
 
 # ==========================================
-# CONFIGURACIÓN PROFESIONAL CHM BRAND
+# CONFIGURACIÓN CHM BRAND - Maryland
 # ==========================================
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -22,74 +22,73 @@ def enviar_telegram(mensaje):
         requests.post(url, json=payload, timeout=10)
     except: pass
 
-def rastrear_amazon_universal():
-    """Buscador que rastrea cualquier link de producto sin depender de clases CSS."""
+def obtener_productos():
+    # Rotamos la identidad del bot para que parezca un humano real
+    user_agents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+    ]
+    
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'User-Agent': random.choice(user_agents),
         'Accept-Language': 'en-US,en;q=0.9',
         'Referer': 'https://www.google.com/'
     }
-    
+
     try:
-        response = requests.get(AMAZON_URL, headers=headers, timeout=30)
-        # Si Amazon nos bloquea con un Captcha, lo detectamos
+        session = requests.Session()
+        response = session.get(AMAZON_URL, headers=headers, timeout=30)
+        
         if "captcha" in response.text.lower():
-            return [], "Amazon detectó el bot y pidió Captcha. Reintentar en una hora."
+            return [], "🚫 Amazon bloqueó la IP. Intentando saltar..."
             
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # BUSCADOR POR ADN: Buscamos links que contengan /dp/ (patrón de producto)
-        links = soup.find_all('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}'))
+        # BUSCADOR POR ADN (Patrón ASIN de 10 caracteres)
+        # Esto es lo más difícil de ocultar para Amazon
+        enlaces = soup.find_all('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}'))
         
-        productos_fisicos = []
-        asins_vistos = set()
-        blacklist = ["plan", "subscription", "auto-renewal", "gift card", "digital", "membership", "blink", "cloud", "trial"]
-        
-        for link in links:
-            if len(productos_fisicos) >= 10: break
+        resultados = []
+        vistos = set()
+        blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial"]
+
+        for link in enlaces:
+            if len(resultados) >= 10: break
             
             href = link.get('href')
-            # Extraer el código ASIN del producto
-            match = re.search(r'\/dp\/([A-Z0-9]{10})', href)
-            if not match: continue
-            asin = match.group(1)
+            asin = re.search(r'\/dp\/([A-Z0-9]{10})', href).group(1)
             
-            if asin in asins_vistos: continue
+            if asin in vistos: continue
             
-            # Buscamos el nombre: puede estar en el texto del link o en una imagen dentro
-            nombre = link.get_text(strip=True)
-            if not nombre:
-                img = link.find('img')
-                nombre = img.get('alt', '') if img else ""
+            # Buscamos el nombre en el texto o en la imagen del producto
+            nombre = link.get_text(strip=True) or (link.find('img').get('alt', '') if link.find('img') else "")
             
-            # Filtro: debe tener un nombre decente y no ser basura digital
-            if len(nombre) < 15 or any(word in nombre.lower() for word in blacklist):
-                continue
+            if len(nombre) > 15 and not any(w in nombre.lower() for w in blacklist):
+                vistos.add(asin)
+                resultados.append({
+                    "producto": nombre[:80], # Limitamos largo para Make
+                    "link": f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
+                })
+        
+        return resultados, None if resultados else "⚠️ Amazon ocultó los productos. Reintentando en la próxima ejecución."
 
-            asins_vistos.add(asin)
-            link_final = f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
-            productos_fisicos.append({"producto": nombre, "link": link_final})
-            
-        return productos_fisicos, None
     except Exception as e:
         return [], str(e)
 
 if __name__ == "__main__":
-    print("🔎 Iniciando rastreo universal para CHM Brand...")
-    lista, error = rastrear_amazon_universal()
+    lista, error = obtener_productos()
     
     if not lista:
-        enviar_telegram(f"⚠️ *Atención Jorge:* {error or 'Amazon ocultó la lista de productos hoy.'}")
+        enviar_telegram(f"CHM Brand Report: {error}")
     else:
         enviados = 0
         for p in lista:
             try:
-                # Envío individual para asegurar las 10 filas
                 r = requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
                 if r.status_code == 200:
                     enviados += 1
-                    time.sleep(random.randint(12, 18)) 
+                    time.sleep(random.randint(10, 15)) # Pausa para no ser detectados
             except: continue
         
-        enviar_telegram(f"✅ *Éxito:* Se enviaron {enviados} productos reales a tu Excel.")
+        enviar_telegram(f"✅ *CHM Brand:* ¡Éxito! {enviados} productos nuevos en tu Excel.")
