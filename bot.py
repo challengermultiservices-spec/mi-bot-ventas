@@ -5,7 +5,7 @@ import time
 import re
 
 # ==========================================
-# CONFIGURACIÓN ELITE CHM BRAND - USA TOTAL
+# CONFIGURACIÓN MAESTRA - CHM BRAND USA
 # ==========================================
 SCRAPER_API_KEY = os.getenv('SCRAPERAPI_KEY')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -24,53 +24,43 @@ def main():
         enviar_telegram("❌ Error: No se detectó la llave SCRAPERAPI_KEY en GitHub.")
         return
 
-    # Usamos ScraperAPI con ultra-renderizado y ubicación fija en USA
+    # Usamos ScraperAPI con ultra-renderizado para ver la página como un humano real
     target_url = "https://www.amazon.com/Best-Sellers-Electronics/zgbs/electronics/"
-    proxy_url = "http://api.scraperapi.com"
-    params = {
-        'api_key': SCRAPER_API_KEY,
-        'url': target_url,
-        'render': 'true',
-        'country_code': 'us',
-        'wait_for_selector': 'div' # Esperamos a que la página cargue algo de contenido
-    }
+    proxy_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={target_url}&render=true&country_code=us"
 
     try:
-        print("🛡️ CHM Brand: Iniciando escaneo profundo de enlaces...")
-        r = requests.get(proxy_url, params=params, timeout=90)
+        print("🛡️ CHM Brand: Iniciando escaneo profundo...")
+        r = requests.get(proxy_url, timeout=90)
         soup = BeautifulSoup(r.content, 'html.parser')
 
         productos = []
         asins_vistos = set()
         blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial", "auto-renewal"]
 
-        # ESCANEO DE ENLACES (Nuclear Option)
-        # Buscamos todos los enlaces que tengan el patrón /dp/ o /gp/product/
+        # BUSCADOR POR ADN: Rastreamos cada link de la página buscando el patrón de Amazon
         enlaces = soup.find_all('a', href=re.compile(r'/(dp|gp/product)/[A-Z0-9]{10}'))
 
         for link in enlaces:
             if len(productos) >= 10: break
             
             href = link.get('href')
-            asin_match = re.search(r'/(dp|gp/product)/([A-Z0-9]{10})', href)
-            if not asin_match: continue
+            match = re.search(r'/(dp|gp/product)/([A-Z0-9]{10})', href)
+            if not match: continue
             
-            # El ASIN es el grupo 2 en este patrón
-            asin = asin_match.group(2)
+            asin = match.group(2)
             if asin in asins_vistos: continue
 
-            # Buscamos el nombre: Prioridad 1: Texto del link. Prioridad 2: Alt de imagen interna.
+            # Intentamos sacar el nombre de 3 formas distintas
             nombre = link.get_text(strip=True)
             if not nombre:
-                img_tag = link.find('img')
-                nombre = img_tag.get('alt', '') if img_tag else ""
-            
-            # Si sigue vacío, buscamos en el contenedor padre
+                img = link.find('img')
+                nombre = img.get('alt', '') if img else ""
             if not nombre:
+                # Si falla lo anterior, buscamos en el contenedor de al lado
                 nombre = link.parent.get_text(strip=True)[:100]
 
-            # Filtros de calidad y seguridad
-            if len(nombre) < 12 or any(w in nombre.lower() for w in blacklist):
+            # Filtro de calidad
+            if len(nombre) < 15 or any(w in nombre.lower() for w in blacklist):
                 continue
 
             asins_vistos.add(asin)
@@ -80,14 +70,14 @@ def main():
             })
 
         if not productos:
-            enviar_telegram("⚠️ Amazon bloqueó todos los identificadores. Probando nueva ruta mañana.")
+            enviar_telegram("⚠️ Amazon bloqueó el escaneo de nombres hoy. Reintentando mañana.")
             return
 
-        # Enviamos los 10 productos finales a tu Excel de USA
+        # Inyectamos los 10 productos en tu Google Sheet (vía Make)
         for p in productos:
             try:
                 requests.post(MAKE_WEBHOOK_URL, json=p, timeout=15)
-                time.sleep(12) # Pausa humana para asegurar las filas en Maryland
+                time.sleep(12) # Pausa vital para evitar bloqueos en el Excel
             except: continue
 
         enviar_telegram(f"✅ *¡Operación Exitosa!* Se inyectaron {len(productos)} productos reales detectados por ADN.")
