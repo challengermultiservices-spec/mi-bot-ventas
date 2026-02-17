@@ -1,30 +1,24 @@
-name: Ejecutar Bot Amazon
+name: CHM Brand USA Bot
 
 on:
-  workflow_dispatch:      # Permite el botón manual "Run workflow"
   schedule:
-    - cron: '0 14 * * *'  # Ejecuta automático a las 9:00 AM EST (aprox)
+    - cron: '0 13 * * *' # Corre diario a la 1:00 PM
+  workflow_dispatch: # Botón para correrlo a mano
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Bajar código del repositorio
-        uses: actions/checkout@v3
-
-      - name: Configurar Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
-
-      - name: 🛠️ Instalar Herramientas (La parte clave)
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: 🚀 Correr el Robot
+          python-version: '3.9'
+      - name: Instalar requisitos
+        run: pip install requests beautifulsoup4
+      - name: Ejecutar Bot
         env:
+          # Estas líneas inyectan tus secretos en el código
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python bot.py
