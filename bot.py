@@ -22,73 +22,85 @@ def enviar_telegram(mensaje):
         requests.post(url, json=payload, timeout=10)
     except: pass
 
-def obtener_productos():
-    # Rotamos la identidad del bot para que parezca un humano real
-    user_agents = [
+def obtener_productos_stealth():
+    # Identidades variadas para engañar a Amazon
+    u_agents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
     ]
     
     headers = {
-        'User-Agent': random.choice(user_agents),
+        'User-Agent': random.choice(u_agents),
         'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://www.google.com/'
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': 'https://www.google.com/',
+        'DNT': '1'
     }
 
     try:
         session = requests.Session()
+        # Simulamos una visita a la home primero para "calentar" la sesión
+        session.get("https://www.amazon.com", headers=headers, timeout=15)
+        time.sleep(random.uniform(2, 5))
+        
         response = session.get(AMAZON_URL, headers=headers, timeout=30)
         
         if "captcha" in response.text.lower():
-            return [], "🚫 Amazon bloqueó la IP. Intentando saltar..."
+            return [], "🚫 Amazon activó un CAPTCHA. La IP de GitHub está marcada."
             
         soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # BUSCADOR POR ADN (Patrón ASIN de 10 caracteres)
-        # Esto es lo más difícil de ocultar para Amazon
+        # Buscamos enlaces de productos por patrón ASIN
         enlaces = soup.find_all('a', href=re.compile(r'\/dp\/[A-Z0-9]{10}'))
         
         resultados = []
-        vistos = set()
+        asins_vistos = set()
         blacklist = ["plan", "subscription", "gift card", "digital", "membership", "blink", "cloud", "trial"]
 
         for link in enlaces:
             if len(resultados) >= 10: break
             
             href = link.get('href')
-            asin = re.search(r'\/dp\/([A-Z0-9]{10})', href).group(1)
+            match = re.search(r'\/dp\/([A-Z0-9]{10})', href)
+            if not match: continue
+            asin = match.group(1)
             
-            if asin in vistos: continue
+            if asin in asins_vistos: continue
             
-            # Buscamos el nombre en el texto o en la imagen del producto
-            nombre = link.get_text(strip=True) or (link.find('img').get('alt', '') if link.find('img') else "")
-            
+            # Buscamos el nombre con prioridad en el texto limpio
+            nombre = link.get_text(strip=True)
+            if not nombre or len(nombre) < 10:
+                img = link.find('img')
+                nombre = img.get('alt', '') if img else ""
+
             if len(nombre) > 15 and not any(w in nombre.lower() for w in blacklist):
-                vistos.add(asin)
+                asins_vistos.add(asin)
                 resultados.append({
-                    "producto": nombre[:80], # Limitamos largo para Make
+                    "producto": nombre[:100], 
                     "link": f"https://www.amazon.com/dp/{asin}?tag={AMAZON_TAG}"
                 })
         
-        return resultados, None if resultados else "⚠️ Amazon ocultó los productos. Reintentando en la próxima ejecución."
+        return resultados, None if resultados else "⚠️ Página cargada pero no se detectaron productos físicos."
 
     except Exception as e:
-        return [], str(e)
+        return [], f"Error de conexión: {str(e)}"
 
 if __name__ == "__main__":
-    lista, error = obtener_productos()
+    print("🚀 Iniciando misión secreta CHM Brand...")
+    lista, error = obtener_productos_stealth()
     
     if not lista:
-        enviar_telegram(f"CHM Brand Report: {error}")
+        enviar_telegram(f"Reporte CHM: {error}")
     else:
-        enviados = 0
+        exitos = 0
         for p in lista:
             try:
+                # El envío a Make debe ser lento para que Google Sheets no se trabe
                 r = requests.post(MAKE_WEBHOOK_URL, json=p, timeout=20)
                 if r.status_code == 200:
-                    enviados += 1
-                    time.sleep(random.randint(10, 15)) # Pausa para no ser detectados
+                    exitos += 1
+                    # Pausa larga y aleatoria: Vital para Maryland
+                    time.sleep(random.randint(15, 25)) 
             except: continue
         
-        enviar_telegram(f"✅ *CHM Brand:* ¡Éxito! {enviados} productos nuevos en tu Excel.")
+        enviar_telegram(f"✅ *CHM Brand:* Se han inyectado {exitos} productos reales en tu inventario.")
